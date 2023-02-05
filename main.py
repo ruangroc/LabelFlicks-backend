@@ -225,9 +225,10 @@ def get_random_frames(video_id: str, count: int = 10):
         ]
     }
 
-
-@app.get("/videos/{video_id}/features")
-def get_video_features(video_id: str):
+# TODO: should be called by get_video_frames
+# TODO: should call calculate_frame_similarity and 
+# get_frame_inferences
+def extract_image_features(video_id: str):
     # TODO: use video_id to fetch numpy file containing
     # image features of all frames in this video
 
@@ -243,8 +244,8 @@ def get_video_features(video_id: str):
     }
 
 
-@app.get("/videos/{video_id}/similarity")
-def get_video_similarity(video_id: str):
+# TODO: should be called by extract_image_features
+def calculate_frame_similarity(video_id: str):
     # TODO: use video_id to fetch numpy file containing
     # UMAP similarity embedding of all frames in this video
 
