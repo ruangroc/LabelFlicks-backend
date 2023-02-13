@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 class Project(BaseModel):
     name: str
-    frame_extraction_rate: Union[int, None] = None # optional
+    frame_extraction_rate: Union[int, None] = 1 # optional
 
 
 ###############################################################
