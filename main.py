@@ -1,14 +1,9 @@
-from typing import Union
 from fastapi import FastAPI
-from pydantic import BaseModel
 
 ###############################################################
 # Data classes for post request bodies
 ###############################################################
-
-class Project(BaseModel):
-    name: str
-    frame_extraction_rate: Union[int, None] = 1 # optional
+from sql_app import schemas, models
 
 
 ###############################################################
@@ -52,7 +47,7 @@ def get_all_projects():
 
 
 @app.post("/projects")
-async def create_project(project: Project):
+async def create_project(project: schemas.ProjectCreate):
     # TODO: validate frame_extraction rate is in expected range,
     # and later the UI can also help enforce that,
     # else default to 1 frame per second extraction rate
@@ -78,7 +73,7 @@ def get_project(project_id: str):
 
 
 @app.put("/projects/{project_id}")
-async def rename_project(project_id: str, project: Project):
+async def rename_project(project_id: str, project: schemas.ProjectCreate):
     # TODO: use project_id to update name of the project,
     # or return error for invalid id
     
@@ -127,6 +122,15 @@ def get_project_labeled_images(project_id: str):
 def get_project_videos(project_id: str):
     # TODO: use project_id to retrieve list of video_ids
     # associated with this project
+
+    return {
+        "id": project_id,
+        "video_ids": []
+    }
+
+@app.post("/projects/{project_id}/videos")
+def upload_project_video(project_id: str, video: schemas.VideoCreate):
+    # TODO: upload a video related to this project
 
     return {
         "id": project_id,
