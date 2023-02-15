@@ -3,6 +3,8 @@ from sqlalchemy import Uuid
 
 from . import models, schemas
 
+import uuid
+
 # Define functions for executing CRUD operations on the database
 
 ###############################################################
@@ -15,7 +17,10 @@ def get_projects(db: Session, skip: int = 0, limit: int = 100):
 
 # POST /projects
 def create_project(db: Session, project: schemas.ProjectCreate):
-    db_project = models.Project() # TODO: update this
+    db_project = models.Project(
+        name=project.name, 
+        frame_extraction_rate=project.frame_extraction_rate
+    )
     db.add(db_project)
     db.commit()
     db.refresh(db_project)

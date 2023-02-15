@@ -1,16 +1,23 @@
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
-###############################################################
 # Data classes for post request bodies
-###############################################################
-from sql_app import schemas, models
+from sql_app import schemas, models, crud
+from sql_app.database import SessionLocal, engine
+from sqlalchemy.orm import Session
 
+# Create database tables
+models.Base.metadata.create_all(bind=engine)
 
-###############################################################
 # Create FastAPI instance
-###############################################################
-
 app = FastAPI()
+
+# Fetch database instance
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 ###############################################################
@@ -47,13 +54,14 @@ def get_all_projects():
 
 
 @app.post("/projects")
-async def create_project(project: schemas.ProjectCreate):
+def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)):
     # TODO: validate frame_extraction rate is in expected range,
     # and later the UI can also help enforce that,
     # else default to 1 frame per second extraction rate
 
-    # TODO: insert new project into database and return 
-    # with id and percent_labeled fields extracted
+    print("received:", project)
+    res = crud.create_project(db, project)
+    print("crud result:", res, res.id, res.name, res.frame_extraction_rate)
     return project
 
 

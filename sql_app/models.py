@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Uuid, Date
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Uuid, Date, text, UUID
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -9,7 +9,7 @@ class Project(Base):
     __tablename__ = "projects"
 
     # Represents the columns in the projects table
-    id = Column('id', Uuid, primary_key=True, index=True)
+    id = Column('id', Uuid, primary_key=True, index=True, server_default=text("gen_random_uuid()"))
     name = Column('name', String)
     frame_extraction_rate = Column('frame_extraction_rate', Integer)
 
@@ -23,7 +23,7 @@ class Project(Base):
 class Video(Base):
     __tablename__ = "videos"
 
-    id = Column('id', Uuid, primary_key=True, index=True)
+    id = Column('id', Uuid, primary_key=True, index=True, server_default=text("gen_random_uuid()"))
     name = Column('name', String)
     video_url = Column('video_url', String)
     frame_features_url = Column('frame_features_url', String)
@@ -38,7 +38,7 @@ class Video(Base):
 class Frame(Base):
     __tablename__ = "frames"
 
-    id = Column('id', Uuid, primary_key=True, index=True)
+    id = Column('id', Uuid, primary_key=True, index=True, server_default=text("gen_random_uuid()"))
     human_reviewed = Column('human_reviewed', Boolean)
     width = Column('width', Integer)
     height = Column('height', Integer)
@@ -48,13 +48,13 @@ class Frame(Base):
 
     project = relationship("Project", back_populates="frames")
     video = relationship("Video", back_populates="frames")
-    bounding_boxes = relationship("BoundingBox", back_populates="frame")
+    # bounding_boxes = relationship("BoundingBox", back_populates="frame")
 
 
 class BoundingBox(Base):
     __tablename__ = "bounding_boxes"
 
-    id = Column('id', Uuid, primary_key=True, index=True)
+    id = Column('id', Uuid, primary_key=True, index=True, server_default=text("gen_random_uuid()"))
     x_top_left = Column('x_top_left', Integer)
     y_top_left = Column('y_top_left', Integer)
     x_bottom_right = Column('x_bottom_right', Integer)
@@ -62,19 +62,19 @@ class BoundingBox(Base):
     width = Column('width', Integer)
     height = Column('height', Integer)
     frame_id = Column('frame_id', Uuid, ForeignKey("frames.id"))
-    label_id = Column('label_id', Uuid, ForeignKey("label.id"))
+    label_id = Column('label_id', Uuid, ForeignKey("labels.id"))
 
-    label = relationship("Label", back_populates="bounding_boxes")
-    frame = relationship("Frame", back_populates="bounding_boxes")
+    # label = relationship("Label", back_populates="bounding_boxes")
+    # frame = relationship("Frame", back_populates="bounding_boxes")
 
 
 class Label(Base):
     __tablename__ = "labels"
 
-    id = Column('id', Uuid, primary_key=True, index=True)
+    id = Column('id', Uuid, primary_key=True, index=True, server_default=text("gen_random_uuid()"))
     name = Column('name', String)
     project_id = Column('project_id', Uuid, ForeignKey("projects.id"))
 
     project = relationship("Project", back_populates="labels")
-    bounding_boxes = relationship("BoundingBox", back_populates="label")
+    # bounding_boxes = relationship("BoundingBox", back_populates="label")
     
