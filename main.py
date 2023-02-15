@@ -5,6 +5,11 @@ from sql_app import schemas, models, crud
 from sql_app.database import SessionLocal, engine
 from sqlalchemy.orm import Session
 
+# Azure related imports
+import os
+from dotenv import load_dotenv
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
@@ -19,6 +24,13 @@ def get_db():
     finally:
         db.close()
 
+# Connect to Azure storage account
+# TODO: find a way to allow external users to specify their connection method
+# I think they can just by specifying their own .env file, but need to verify
+load_dotenv()
+account_url = os.getenv("AZURE_ACCOUNT_URL")
+connect_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+blob_service_client = BlobServiceClient.from_connection_string(connect_str)
 
 ###############################################################
 # Projects endpoints
@@ -62,6 +74,8 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
     print("received:", project)
     res = crud.create_project(db, project)
     print("crud result:", res, res.id, res.name, res.frame_extraction_rate)
+    container_name = str(res.id)
+    blob_service_client.create_container(container_name)
     return project
 
 
