@@ -1,22 +1,36 @@
-from typing import Union
-from fastapi import FastAPI
-from pydantic import BaseModel
+from fastapi import Depends, FastAPI
 
-###############################################################
 # Data classes for post request bodies
-###############################################################
+from sql_app import schemas, models, crud
+from sql_app.database import SessionLocal, engine
+from sqlalchemy.orm import Session
 
-class Project(BaseModel):
-    name: str
-    frame_extraction_rate: Union[int, None] = None # optional
+# Azure related imports
+import os
+from dotenv import load_dotenv
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 
+# Create database tables
+models.Base.metadata.create_all(bind=engine)
 
-###############################################################
 # Create FastAPI instance
-###############################################################
-
 app = FastAPI()
 
+# Fetch database instance
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# Connect to Azure storage account
+# TODO: find a way to allow external users to specify their connection method
+# I think they can just by specifying their own .env file, but need to verify
+load_dotenv()
+account_url = os.getenv("AZURE_ACCOUNT_URL")
+connect_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+blob_service_client = BlobServiceClient.from_connection_string(connect_str)
 
 ###############################################################
 # Projects endpoints
@@ -52,13 +66,16 @@ def get_all_projects():
 
 
 @app.post("/projects")
-async def create_project(project: Project):
+def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)):
     # TODO: validate frame_extraction rate is in expected range,
     # and later the UI can also help enforce that,
     # else default to 1 frame per second extraction rate
 
-    # TODO: insert new project into database and return 
-    # with id and percent_labeled fields extracted
+    print("received:", project)
+    res = crud.create_project(db, project)
+    print("crud result:", res, res.id, res.name, res.frame_extraction_rate)
+    container_name = str(res.id)
+    blob_service_client.create_container(container_name)
     return project
 
 
@@ -78,7 +95,7 @@ def get_project(project_id: str):
 
 
 @app.put("/projects/{project_id}")
-async def rename_project(project_id: str, project: Project):
+async def rename_project(project_id: str, project: schemas.ProjectCreate):
     # TODO: use project_id to update name of the project,
     # or return error for invalid id
     
@@ -127,6 +144,15 @@ def get_project_labeled_images(project_id: str):
 def get_project_videos(project_id: str):
     # TODO: use project_id to retrieve list of video_ids
     # associated with this project
+
+    return {
+        "id": project_id,
+        "video_ids": []
+    }
+
+@app.post("/projects/{project_id}/videos")
+def upload_project_video(project_id: str, video: schemas.VideoCreate):
+    # TODO: upload a video related to this project
 
     return {
         "id": project_id,

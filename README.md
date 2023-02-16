@@ -4,6 +4,8 @@
 
 With auto-reloading: `uvicorn main:app --reload`
 
+To test endpoints, I can go to `localhost:8000/docs` and use the `Try it out` feature
+
 ## Running the Postgres Database
 
 Initializing database for the first time and create a bind mounted Docker volume named `viva-volume`:
