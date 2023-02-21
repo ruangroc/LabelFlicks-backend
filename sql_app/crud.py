@@ -30,12 +30,26 @@ def create_project(db: Session, project: schemas.ProjectCreate):
 def get_project_by_id(db: Session, project_id: Uuid):
     return db.query(models.Project).filter(models.Project.id == project_id).first()
 
+# Get percent of frames that have been human-reviewed
+def get_percent_frames_reviewed(db: Session, project_id: Uuid):
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    
+    # If no frames exist in the project, no need to calculate percent reviewed
+    total = len(project.frames)
+    if total == 0:
+        return 0.0
+    
+    reviewed = 0
+    for i in range(total):
+        if project.frames[i].human_reviewed:
+            reviewed += 1
+    return round(100*(reviewed / total), 2)
+
 # POST /projects/{project_id}
 # TODO: implement a way to rename in database
 
 # DELETE /projects/{project_id}
 # TODO: implement delete project from database
-
 
 ###############################################################
 # videos table

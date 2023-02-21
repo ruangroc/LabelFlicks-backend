@@ -1,4 +1,5 @@
 from fastapi import Depends, FastAPI
+from fastapi.responses import JSONResponse
 
 # Data classes for post request bodies
 from sql_app import schemas, models, crud
@@ -37,32 +38,16 @@ blob_service_client = BlobServiceClient.from_connection_string(connect_str)
 ###############################################################
 
 @app.get("/projects")
-def get_all_projects():
-    # TODO: retrieve projects from database, requires 
-    # calculating percent_labeled for each
+def get_all_projects(db: Session = Depends(get_db)):
+    projects = crud.get_projects(db)
 
-    return {
-        "projects": [
-            {
-                "id": "uuid-p1",
-                "name": "raccoon-sightings",
-                "frame_extraction_rate": 1,
-                "percent_labeled": 50
-            },
-            {
-                "id": "uuid-p2",
-                "name": "squirrels",
-                "frame_extraction_rate": 2,
-                "percent_labeled": 22
-            },
-            {
-                "id": "uuid-p3",
-                "name": "cats-in-windows",
-                "frame_extraction_rate": 1,
-                "percent_labeled": 0
-            }
-        ]
-    } 
+    # For each project, calculate the percent of total frames that have
+    # been human-reviewed so far
+    for project in projects:
+        percent_labeled = crud.get_percent_frames_reviewed(db, project.id)
+        project.percent_labeled = percent_labeled
+    
+    return projects
 
 
 @app.post("/projects")
@@ -80,18 +65,15 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
 
 
 @app.get("/projects/{project_id}")
-def get_project(project_id: str):
-    # TODO: use project_id to retrieve the project from the 
-    # database, or return an error message
+def get_project(project_id: str, db: Session = Depends(get_db)):
+    project = crud.get_project_by_id(db, project_id)
 
-    return {
-        "project": {
-            "id": project_id,
-            "name": "requested-project-name",
-            "frame_extraction_rate": 1,
-            "percent_labeled": 10
-        }
-    }
+    if project == None:
+        return JSONResponse(status_code=404, content={"message": "Project with ID " + project_id + " not found"})
+    
+    percent_labeled = crud.get_percent_frames_reviewed(db, project.id)
+    project.percent_labeled = percent_labeled
+    return project
 
 
 @app.put("/projects/{project_id}")
