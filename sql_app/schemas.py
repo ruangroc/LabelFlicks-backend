@@ -19,6 +19,7 @@ from pydantic import BaseModel
 class ProjectBase(BaseModel):
     name: str
     frame_extraction_rate: Union[int, None] = 1 # optional
+    percent_labeled: Union[float, None] = 0.0
 
 # When creating a project, we won't know its uuid
 class ProjectCreate(ProjectBase):
@@ -26,7 +27,7 @@ class ProjectCreate(ProjectBase):
 
 # When fetching a project, we should know everything
 class Project(ProjectBase):
-    id: UUID
+    id: UUID 
 
     class Config:
         orm_mode = True
