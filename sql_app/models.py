@@ -48,7 +48,6 @@ class Frame(Base):
 
     project = relationship("Project", back_populates="frames")
     video = relationship("Video", back_populates="frames")
-    # bounding_boxes = relationship("BoundingBox", back_populates="frame")
 
 
 class BoundingBox(Base):
@@ -64,9 +63,6 @@ class BoundingBox(Base):
     frame_id = Column('frame_id', Uuid, ForeignKey("frames.id"))
     label_id = Column('label_id', Uuid, ForeignKey("labels.id"))
 
-    # label = relationship("Label", back_populates="bounding_boxes")
-    # frame = relationship("Frame", back_populates="bounding_boxes")
-
 
 class Label(Base):
     __tablename__ = "labels"
@@ -76,5 +72,4 @@ class Label(Base):
     project_id = Column('project_id', Uuid, ForeignKey("projects.id"))
 
     project = relationship("Project", back_populates="labels")
-    # bounding_boxes = relationship("BoundingBox", back_populates="label")
     
