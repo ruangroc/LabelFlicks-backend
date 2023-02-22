@@ -29,9 +29,10 @@ def get_db():
 # TODO: find a way to allow external users to specify their connection method
 # I think they can just by specifying their own .env file, but need to verify
 load_dotenv()
-account_url = os.getenv("AZURE_ACCOUNT_URL")
 connect_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-blob_service_client = BlobServiceClient.from_connection_string(connect_str)
+blob_service_client = None
+if connect_str:
+    blob_service_client = BlobServiceClient.from_connection_string(connect_str)
 
 ###############################################################
 # Projects endpoints
@@ -60,7 +61,13 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
     res = crud.create_project(db, project)
     print("crud result:", res, res.id, res.name, res.frame_extraction_rate)
     container_name = str(res.id)
-    blob_service_client.create_container(container_name)
+    # If connected to Azure, create a container in the blob storage account
+    # Otherwise, create a directory in the local file system
+    if blob_service_client:
+        blob_service_client.create_container(container_name)
+    else:
+        if not os.path.exists(container_name):
+            os.makedirs(container_name)
     return project
 
 
