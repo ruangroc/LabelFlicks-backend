@@ -2,7 +2,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-# hope that's the right URL but we'll see
 SQLALCHEMY_DATABASE_URL = "postgresql://postgres:viva@localhost:5432/postgres"
 
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
