@@ -45,6 +45,11 @@ def get_percent_frames_reviewed(db: Session, project_id: Uuid):
             reviewed += 1
     return round(100*(reviewed / total), 2)
 
+# Get number of videos in this project
+def get_video_count(db: Session, project_id: Uuid):
+    project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    return len(project.videos)
+
 # POST /projects/{project_id}
 # TODO: implement a way to rename in database
 

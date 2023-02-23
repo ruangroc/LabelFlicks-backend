@@ -20,6 +20,7 @@ class ProjectBase(BaseModel):
     name: str
     frame_extraction_rate: Union[int, None] = 1 # optional
     percent_labeled: Union[float, None] = 0.0
+    video_count: Union[int, None] = 0
 
 # When creating a project, we won't know its uuid
 class ProjectCreate(ProjectBase):

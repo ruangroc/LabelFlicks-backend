@@ -1,5 +1,6 @@
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 # Data classes for post request bodies
 from sql_app import schemas, models, crud
@@ -34,6 +35,21 @@ blob_service_client = None
 if connect_str:
     blob_service_client = BlobServiceClient.from_connection_string(connect_str)
 
+# Specify allowed origins for requests
+origins = [
+    "http://localhost",
+    "http://localhost:8000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 ###############################################################
 # Projects endpoints
 ###############################################################
@@ -47,6 +63,7 @@ def get_all_projects(db: Session = Depends(get_db)):
     for project in projects:
         percent_labeled = crud.get_percent_frames_reviewed(db, project.id)
         project.percent_labeled = percent_labeled
+        project.video_count = crud.get_video_count(db, project.id)
     
     return projects
 
@@ -78,8 +95,8 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
     if project == None:
         return JSONResponse(status_code=404, content={"message": "Project with ID " + project_id + " not found"})
     
-    percent_labeled = crud.get_percent_frames_reviewed(db, project.id)
-    project.percent_labeled = percent_labeled
+    project.percent_labeled = crud.get_percent_frames_reviewed(db, project.id)
+    project.video_count = crud.get_video_count(db, project.id)
     return project
 
 
