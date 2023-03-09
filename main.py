@@ -1,6 +1,7 @@
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+import uuid
 
 # Data classes for post request bodies
 from sql_app import schemas, models, crud
@@ -90,6 +91,12 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
 
 @app.get("/projects/{project_id}")
 def get_project(project_id: str, db: Session = Depends(get_db)):
+    # Validate that project_id is a valid UUID
+    try:
+        uuid.UUID(project_id)
+    except :
+        return JSONResponse(status_code=400, content={"message": "Project ID " + project_id + " is not a valid UUID"})
+    
     project = crud.get_project_by_id(db, project_id)
 
     if project == None:
