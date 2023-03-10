@@ -30,6 +30,9 @@ def create_project(db: Session, project: schemas.ProjectCreate):
 def get_project_by_id(db: Session, project_id: Uuid):
     return db.query(models.Project).filter(models.Project.id == project_id).first()
 
+def get_project_by_name(db: Session, project_name: Uuid):
+    return db.query(models.Project).filter(models.Project.name == project_name).first()
+
 # Get percent of frames that have been human-reviewed
 def get_percent_frames_reviewed(db: Session, project_id: Uuid):
     project = db.query(models.Project).filter(models.Project.id == project_id).first()
