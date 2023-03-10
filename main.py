@@ -2,6 +2,7 @@ from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uuid
+from typing import Any, List, Union
 
 # Data classes for post request bodies
 from sql_app import schemas, models, crud
@@ -55,29 +56,41 @@ app.add_middleware(
 # Projects endpoints
 ###############################################################
 
-@app.get("/projects")
+@app.get("/projects", response_model=List[schemas.ExistingProject])
 def get_all_projects(db: Session = Depends(get_db)):
     projects = crud.get_projects(db)
+    returned_projects = []
 
-    # For each project, calculate the percent of total frames that have
-    # been human-reviewed so far
+    # Convert each project from database query response model to response model
+        # and also get most up to date calculations for video count and percent
+        # of frames reviewed
     for project in projects:
-        percent_labeled = crud.get_percent_frames_reviewed(db, project.id)
-        project.percent_labeled = percent_labeled
-        project.video_count = crud.get_video_count(db, project.id)
+        new_project = schemas.ExistingProject.parse_obj({
+            "id": project.id,
+            "name": project.name,
+            "frame_extraction_rate": project.frame_extraction_rate,
+            "percent_labeled": crud.get_percent_frames_reviewed(db, project.id),
+            "video_count": crud.get_video_count(db, project.id)
+        })
+        returned_projects.append(new_project)
     
-    return projects
+    return returned_projects
 
 
-@app.post("/projects")
+@app.post("/projects", response_model=schemas.ExistingProject)
 def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)):
     # TODO: validate frame_extraction rate is in expected range,
     # and later the UI can also help enforce that,
     # else default to 1 frame per second extraction rate
 
-    print("received:", project)
-    res = crud.create_project(db, project)
-    print("crud result:", res, res.id, res.name, res.frame_extraction_rate)
+    if crud.get_project_by_name(db, project.name):
+        return JSONResponse(status_code=400, content={"message": "Error: there is already a project named " + project.name})
+
+    try:
+        res = crud.create_project(db, project)
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"message": "Unable to create project named " + project.name + " error: " + str(e)})
+
     container_name = str(res.id)
     # If connected to Azure, create a container in the blob storage account
     # Otherwise, create a directory in the local file system
@@ -86,24 +99,41 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
     else:
         if not os.path.exists(container_name):
             os.makedirs(container_name)
-    return project
+    
+    # Convert from database query response model to response model
+    new_project = schemas.ExistingProject.parse_obj({
+        "id": res.id,
+        "name": res.name,
+        "frame_extraction_rate": res.frame_extraction_rate,
+        "percent_labeled": 0.0,
+        "video_count": 0
+    })
+
+    return new_project
 
 
-@app.get("/projects/{project_id}")
+@app.get("/projects/{project_id}", response_model=schemas.ExistingProject)
 def get_project(project_id: str, db: Session = Depends(get_db)):
     # Validate that project_id is a valid UUID
     try:
         uuid.UUID(project_id)
-    except :
+    except:
         return JSONResponse(status_code=400, content={"message": "Project ID " + project_id + " is not a valid UUID"})
     
-    project = crud.get_project_by_id(db, project_id)
+    res = crud.get_project_by_id(db, project_id)
 
-    if project == None:
+    if res == None:
         return JSONResponse(status_code=404, content={"message": "Project with ID " + project_id + " not found"})
     
-    project.percent_labeled = crud.get_percent_frames_reviewed(db, project.id)
-    project.video_count = crud.get_video_count(db, project.id)
+    # Convert from database query response model to response model
+    project = schemas.ExistingProject.parse_obj({
+        "id": res.id,
+        "name": res.name,
+        "frame_extraction_rate": res.frame_extraction_rate,
+        "percent_labeled": crud.get_percent_frames_reviewed(db, res.id),
+        "video_count": crud.get_video_count(db, res.id)
+    })
+
     return project
 
 
