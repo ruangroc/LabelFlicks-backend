@@ -9,8 +9,8 @@ class Project(Base):
     __tablename__ = "projects"
 
     # Represents the columns in the projects table
-    id = Column('id', Uuid, primary_key=True, index=True, server_default=text("gen_random_uuid()"))
-    name = Column('name', String)
+    id = Column('id', Uuid, primary_key=True, index=True, unique=True, server_default=text("gen_random_uuid()"))
+    name = Column('name', String, unique=True)
     frame_extraction_rate = Column('frame_extraction_rate', Integer)
 
     # Fetch the items from the database that has foreign key pointing
@@ -23,8 +23,8 @@ class Project(Base):
 class Video(Base):
     __tablename__ = "videos"
 
-    id = Column('id', Uuid, primary_key=True, index=True, server_default=text("gen_random_uuid()"))
-    name = Column('name', String)
+    id = Column('id', Uuid, primary_key=True, index=True, unique=True, server_default=text("gen_random_uuid()"))
+    name = Column('name', String, unique=True)
     video_url = Column('video_url', String)
     frame_features_url = Column('frame_features_url', String)
     frame_similarity_url = Column('frame_similarity_url', String)
@@ -38,7 +38,7 @@ class Video(Base):
 class Frame(Base):
     __tablename__ = "frames"
 
-    id = Column('id', Uuid, primary_key=True, index=True, server_default=text("gen_random_uuid()"))
+    id = Column('id', Uuid, primary_key=True, index=True, unique=True, server_default=text("gen_random_uuid()"))
     human_reviewed = Column('human_reviewed', Boolean)
     width = Column('width', Integer)
     height = Column('height', Integer)
@@ -53,7 +53,7 @@ class Frame(Base):
 class BoundingBox(Base):
     __tablename__ = "bounding_boxes"
 
-    id = Column('id', Uuid, primary_key=True, index=True, server_default=text("gen_random_uuid()"))
+    id = Column('id', Uuid, primary_key=True, index=True, unique=True, server_default=text("gen_random_uuid()"))
     x_top_left = Column('x_top_left', Integer)
     y_top_left = Column('y_top_left', Integer)
     x_bottom_right = Column('x_bottom_right', Integer)
@@ -67,8 +67,8 @@ class BoundingBox(Base):
 class Label(Base):
     __tablename__ = "labels"
 
-    id = Column('id', Uuid, primary_key=True, index=True, server_default=text("gen_random_uuid()"))
-    name = Column('name', String)
+    id = Column('id', Uuid, primary_key=True, index=True, unique=True, server_default=text("gen_random_uuid()"))
+    name = Column('name', String, unique=True)
     project_id = Column('project_id', Uuid, ForeignKey("projects.id"))
 
     project = relationship("Project", back_populates="labels")
