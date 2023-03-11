@@ -16,6 +16,17 @@ Initializing database for the first time and create a bind mounted Docker volume
 
 `docker run --rm --name vivadb -v viva-volume:/var/lib/postgresql/data -e POSTGRES_PASSWORD=viva -p 5432:5432 -d postgres:latest`
 
+If creating a database for testing, use: `docker run --rm --name testdb -e POSTGRES_PASSWORD=postgres -p 5432:5432 -d postgres:latest`
+
+The .env file should contain the database URLs to select between and whether it's a test environment or not in addition to the Azure URLs (if using Azure blob storage.)
+
+```
+AZURE_STORAGE_CONNECTION_STRING="..."
+AZURE_ACCOUNT_URL="..."
+TEST_ENVIRONMENT="TRUE"
+POSTGRES_TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
+POSTGRES_DEV_DATABASE_URL ="postgresql://postgres:viva@localhost:5432/postgres"
+```
 
 Connect to an already running postgres container: `docker exec -it vivadb bash`
 
