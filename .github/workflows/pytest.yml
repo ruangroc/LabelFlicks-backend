@@ -42,13 +42,10 @@ jobs:
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
           # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-      - name: Connect to PostgreSQL
+      - name: Connect to PostgreSQL and run the tests
         # Runs a script that creates a PostgreSQL table, populates
         # the table with data, and then retrieves the data.
-        run: node client.js
+        run: pytest
         env:
           TEST_ENVIRONMENT: "FALSE"
           POSTGRES_TEST_DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
-      - name: Test with pytest
-        run: |
-          pytest
