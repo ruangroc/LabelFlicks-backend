@@ -2,9 +2,11 @@
 
 ## Running the FastAPI server
 
-With auto-reloading: `uvicorn main:app --reload`
+With auto-reloading: `uvicorn main:app --port=5000 --reload`
 
-To test endpoints, I can go to `localhost:8000/docs` and use the `Try it out` feature
+To test endpoints, I can go to `localhost:5000/docs` and use the `Try it out` feature
+
+Note: the Svelte + Electron UI uses localhost:8000 by default.
 
 ## Running the Postgres Database
 
