@@ -1,5 +1,6 @@
 # my own
 *.pem
+local_projects/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

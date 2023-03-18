@@ -55,7 +55,7 @@ def test_create_and_get_first_project():
     assert data["percent_labeled"] == 0
     assert data["id"] == project_id1
 
-def test_create_and_get_second_project():
+def test_create_and_try_get_second_project():
     project_id2 = ""
 
     response = client.post(
@@ -69,6 +69,12 @@ def test_create_and_get_second_project():
     assert data["percent_labeled"] == 0
     assert "id" in data
     project_id2 = data["id"]
+
+    # Getting a project with an invalid UUID shouldn't work
+    response = client.get(f"/projects/{project_id2}4321")
+    assert response.status_code == 400
+    data = response.json()
+    assert data["message"] == "Project ID " + project_id2 + "4321 is not a valid UUID"
 
     response = client.get(f"/projects/{project_id2}")
     assert response.status_code == 200, response.text
@@ -84,3 +90,12 @@ def test_get_all_projects():
     assert response.json(), response.text
     data = response.json()
     assert len(data) == 2
+
+def test_create_project_with_same_name():
+    response = client.post(
+        "/projects",
+        json={"name": "testproject1", "frame_extraction_rate": 1},
+    )
+    assert response.status_code == 400
+    data = response.json()
+    assert data["message"] == "Error: there is already a project named testproject1"
