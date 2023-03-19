@@ -19,19 +19,6 @@ app.dependency_overrides[get_db] = override_get_db
 
 client = TestClient(app)
 
-
-def override_get_db():
-    try:
-        db = SessionLocal()
-        yield db
-    finally:
-        db.close()
-
-
-app.dependency_overrides[get_db] = override_get_db
-
-client = TestClient(app)
-
 def test_create_and_get_first_project():
     project_id1 = ""
 
