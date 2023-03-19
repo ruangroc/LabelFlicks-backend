@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uuid
@@ -92,7 +92,7 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
     except Exception as e:
         return JSONResponse(status_code=400, content={"message": "Unable to create project named " + project.name + " error: " + str(e)})
 
-    container_name = str(res.id)
+    container_name = str(res.name)
     
     if test_status != "TRUE":
         # If connected to Azure, create a container in the blob storage account
@@ -100,8 +100,8 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
         if blob_service_client:
             blob_service_client.create_container(container_name)
         else:
-            if not os.path.exists(container_name):
-                os.makedirs(container_name)
+            if not os.path.exists("./local_projects/" + container_name):
+                os.mkdir("./local_projects/" + container_name)
     
     # Convert from database query response model to response model
     new_project = schemas.ExistingProject.parse_obj({
@@ -197,13 +197,60 @@ def get_project_videos(project_id: str):
     }
 
 @app.post("/projects/{project_id}/videos")
-def upload_project_video(project_id: str, video: schemas.VideoCreate):
-    # TODO: upload a video related to this project
+async def upload_project_video(project_id: str, video: UploadFile, db: Session = Depends(get_db)):
+    # Validate that project_id is a valid UUID
+    try:
+        uuid.UUID(project_id)
+    except:
+        return JSONResponse(status_code=400, content={"message": "Project ID " + project_id + " is not a valid UUID"})
 
-    return {
-        "id": project_id,
-        "video_ids": []
-    }
+    # Validate that the specified project exists in the database
+    containing_project = crud.get_project_by_id(db, project_id)
+    if containing_project == None:
+        return JSONResponse(status_code=404, content={"message": "Project with ID " + project_id + " not found"})
+
+    try:
+        # Read video data as bytes
+        contents = video.file.read()
+
+        # Insert new video into database
+        video_obj = schemas.VideoCreate.parse_obj({
+            "name": video.filename,
+            "project_id": containing_project.id
+        })
+        video_insert_response = crud.create_video(db, video_obj)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"message": "Failed to insert video " + video.filename + " into database with error " + str(e)})
+
+    try:
+        # Upload video to the appropriate storage location (Azure or local file system)
+        container_name = containing_project.name
+        if blob_service_client:
+            # If connected to Azure, upload video to project's blob storage container
+            blob_client = blob_service_client.get_blob_client(container=container_name, blob=video.filename)
+            blob_client.upload_blob(contents)
+        else:
+            # Otherwise, add to project directory in the local file system
+            local_path = "./local_projects/" + container_name + "/" + video.filename
+            if not os.path.exists(local_path):
+                with open(local_path, "wb") as f:
+                    f.write(contents)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"message": "Failed to save video " + video.filename + " with error " + str(e)})
+        # TODO: delete video from database (endpoint below)
+
+    # TODO: send video to be preprocessed (using functions below), maybe using background child processes
+
+    # Close the video file
+    video.file.close()
+
+    return JSONResponse(
+        status_code=200, 
+        content={
+            "id": project_id,
+            "video_id": str(video_insert_response.id)
+        }
+    )
 
 
 ###############################################################
