@@ -109,9 +109,8 @@ def test_upload_one_video():
         f"/projects/{project_id}/videos",
         files={"video": open("./test_videos/" + test_video_name, "rb")}
     )
-    data = upload_response.json()
-    print(data)
     assert upload_response.status_code == 200
+    data = upload_response.json()
     assert data["id"] == project_id
     assert data["video_id"]
     assert uuid.UUID(data["video_id"])
