@@ -101,7 +101,7 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
             blob_service_client.create_container(container_name)
         else:
             if not os.path.exists("./local_projects/" + container_name):
-                os.mkdir("./local_projects/" + container_name)
+                os.makedirs("./local_projects/" + container_name)
     
     # Convert from database query response model to response model
     new_project = schemas.ExistingProject.parse_obj({
