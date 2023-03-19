@@ -222,22 +222,24 @@ async def upload_project_video(project_id: str, video: UploadFile, db: Session =
     except Exception as e:
         return JSONResponse(status_code=500, content={"message": "Failed to insert video " + video.filename + " into database with error " + str(e)})
 
-    try:
-        # Upload video to the appropriate storage location (Azure or local file system)
-        container_name = containing_project.name
-        if blob_service_client:
-            # If connected to Azure, upload video to project's blob storage container
-            blob_client = blob_service_client.get_blob_client(container=container_name, blob=video.filename)
-            blob_client.upload_blob(contents)
-        else:
-            # Otherwise, add to project directory in the local file system
-            local_path = "./local_projects/" + container_name + "/" + video.filename
-            if not os.path.exists(local_path):
-                with open(local_path, "wb") as f:
-                    f.write(contents)
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"message": "Failed to save video " + video.filename + " with error " + str(e)})
-        # TODO: delete video from database (endpoint below)
+    # For tests, don't clutter workspace by uploading videos all the time
+    if test_status != "TRUE":
+        try:
+            # Upload video to the appropriate storage location (Azure or local file system)
+            container_name = containing_project.name
+            if blob_service_client:
+                # If connected to Azure, upload video to project's blob storage container
+                blob_client = blob_service_client.get_blob_client(container=container_name, blob=video.filename)
+                blob_client.upload_blob(contents)
+            else:
+                # Otherwise, add to project directory in the local file system
+                local_path = "./local_projects/" + container_name + "/" + video.filename
+                if not os.path.exists(local_path):
+                    with open(local_path, "wb") as f:
+                        f.write(contents)
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"message": "Failed to save video " + video.filename + " with error " + str(e)})
+            # TODO: delete video from database (endpoint below)
 
     # TODO: send video to be preprocessed (using functions below), maybe using background child processes
 
