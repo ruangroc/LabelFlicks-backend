@@ -29,13 +29,14 @@ def get_db():
         db.close()
 
 # Connect to Azure storage account
-# TODO: find a way to allow external users to specify their connection method
-# I think they can just by specifying their own .env file, but need to verify
 load_dotenv()
 connect_str = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
 blob_service_client = None
 if connect_str:
     blob_service_client = BlobServiceClient.from_connection_string(connect_str)
+
+# Check if testing or not
+test_status = os.getenv("TEST_ENVIRONMENT")
 
 # Specify allowed origins for requests
 origins = [
@@ -92,13 +93,15 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
         return JSONResponse(status_code=400, content={"message": "Unable to create project named " + project.name + " error: " + str(e)})
 
     container_name = str(res.id)
-    # If connected to Azure, create a container in the blob storage account
-    # Otherwise, create a directory in the local file system
-    if blob_service_client:
-        blob_service_client.create_container(container_name)
-    else:
-        if not os.path.exists(container_name):
-            os.makedirs(container_name)
+    
+    if test_status != "TRUE":
+        # If connected to Azure, create a container in the blob storage account
+        # Otherwise, create a directory in the local file system
+        if blob_service_client:
+            blob_service_client.create_container(container_name)
+        else:
+            if not os.path.exists(container_name):
+                os.makedirs(container_name)
     
     # Convert from database query response model to response model
     new_project = schemas.ExistingProject.parse_obj({
