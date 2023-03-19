@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 from sql_app.database import SessionLocal, engine
 from sql_app import models
 from main import app, get_db
+import uuid
 
 # Clear test database before creating new tables
 models.Base.metadata.drop_all(bind=engine)
@@ -86,3 +87,31 @@ def test_create_project_with_same_name():
     assert response.status_code == 400
     data = response.json()
     assert data["message"] == "Error: there is already a project named testproject1"
+
+def test_upload_one_video():
+    # Step 1: create a project
+    project_id = ""
+    response = client.post(
+        "/projects",
+        json={"name": "testproject3", "frame_extraction_rate": 1},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["name"] == "testproject3"
+    assert data["frame_extraction_rate"] == 1
+    assert data["percent_labeled"] == 0
+    assert "id" in data
+    project_id = data["id"]
+
+    # Step 2: upload a video
+    test_video_name = "library-of-congress-mckinley-oath-clip.mp4"
+    upload_response = client.post(
+        f"/projects/{project_id}/videos",
+        files={"video": open("./test_videos/" + test_video_name, "rb")}
+    )
+    print(upload_response.text)
+    assert upload_response.status_code == 200
+    data = upload_response.json()
+    assert data["id"] == project_id
+    assert data["video_id"]
+    assert uuid.UUID(data["video_id"])
