@@ -3,7 +3,7 @@ from sqlalchemy import Uuid
 
 from . import models, schemas
 
-import uuid
+import datetime
 
 # Define functions for executing CRUD operations on the database
 
@@ -63,6 +63,24 @@ def get_video_count(db: Session, project_id: Uuid):
 # videos table
 ###############################################################
 
+# POST /projects/{project_id}/videos
+def create_video(db: Session, video: schemas.VideoCreate):
+    # Get local version of current date using %x format, example: 12/31/18
+    current_datetime = datetime.datetime.now()
+    current_date = current_datetime.strftime("%x")
+
+    db_video = models.Video(
+        name=video.name, 
+        project_id=video.project_id,
+        date_uploaded=current_date
+    )
+    db.add(db_video)
+    db.commit()
+    db.refresh(db_video)
+    return db_video
+
+def get_video_by_name(db: Session, video_name: str):
+    return db.query(models.Video).filter(models.Video.name == video_name).first()
 
 ###############################################################
 # frames table
