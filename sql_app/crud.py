@@ -79,6 +79,9 @@ def create_video(db: Session, video: schemas.VideoCreate):
     db.refresh(db_video)
     return db_video
 
+def get_video_by_name(db: Session, video_name: str):
+    return db.query(models.Video).filter(models.Video.name == video_name).first()
+
 ###############################################################
 # frames table
 ###############################################################

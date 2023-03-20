@@ -124,6 +124,15 @@ def test_upload_one_video():
     data = response.json()
     assert data["message"] == "Project ID " + str(project_id) + "4321abc is not a valid UUID"
 
+    # Trying to upload the same video again to the same project should fail
+    upload_response = client.post(
+        f"/projects/{project_id}/videos",
+        files={"video": open("./test_videos/" + test_video_name, "rb")}
+    )
+    assert upload_response.status_code == 400
+    data = upload_response.json()
+    assert data["message"] == "Video " + test_video_name + " has already been uploaded"
+
 def test_upload_video_to_nonexistent_project():
     # Uploading to a non-existent project should fail
     fake_project_id = uuid.UUID('12345678123456781234567812345678')

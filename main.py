@@ -209,6 +209,11 @@ async def upload_project_video(project_id: str, video: UploadFile, db: Session =
     if containing_project == None:
         return JSONResponse(status_code=404, content={"message": "Project with ID " + project_id + " not found"})
     
+    # Validate that the video has not already been uploaded
+    duplicate_video = crud.get_video_by_name(db, video.filename)
+    if duplicate_video:
+        return JSONResponse(status_code=400, content={"message": "Video " + video.filename + " has already been uploaded"})
+
     # Validate that the video file is in fact a video
     if video.content_type != "video/mp4":
         return JSONResponse(status_code=400, content={"message": "Video " + video.filename + " is not of content-type video/mp4"})
