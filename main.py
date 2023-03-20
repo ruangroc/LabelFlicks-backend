@@ -208,19 +208,17 @@ async def upload_project_video(project_id: str, video: UploadFile, db: Session =
     containing_project = crud.get_project_by_id(db, project_id)
     if containing_project == None:
         return JSONResponse(status_code=404, content={"message": "Project with ID " + project_id + " not found"})
+    
+    # Validate that the video file is in fact a video
+    if video.content_type != "video/mp4":
+        return JSONResponse(status_code=400, content={"message": "Video " + video.filename + " is not of content-type video/mp4"})
 
+    # Read the video file
     try:
         # Read video data as bytes
         contents = video.file.read()
-
-        # Insert new video into database
-        video_obj = schemas.VideoCreate.parse_obj({
-            "name": video.filename,
-            "project_id": containing_project.id
-        })
-        video_insert_response = crud.create_video(db, video_obj)
     except Exception as e:
-        return JSONResponse(status_code=500, content={"message": "Failed to insert video " + video.filename + " into database with error " + str(e)})
+        return JSONResponse(status_code=500, content={"message": "Failed to read video " + video.filename + " with error " + str(e)})
 
     # For tests, don't clutter workspace by uploading videos all the time
     if test_status != "TRUE":
@@ -239,7 +237,16 @@ async def upload_project_video(project_id: str, video: UploadFile, db: Session =
                         f.write(contents)
         except Exception as e:
             return JSONResponse(status_code=500, content={"message": "Failed to save video " + video.filename + " with error " + str(e)})
-            # TODO: delete video from database (endpoint below)
+
+    try:
+        # Insert new video into database
+        video_obj = schemas.VideoCreate.parse_obj({
+            "name": video.filename,
+            "project_id": containing_project.id
+        })
+        video_insert_response = crud.create_video(db, video_obj)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"message": "Failed to insert video " + video.filename + " into database with error " + str(e)})
 
     # TODO: send video to be preprocessed (using functions below), maybe using background child processes
 

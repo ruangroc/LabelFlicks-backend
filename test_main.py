@@ -135,3 +135,19 @@ def test_upload_video_to_nonexistent_project():
     assert upload_response.status_code == 404
     data = upload_response.json()
     assert data["message"] == "Project with ID " + str(fake_project_id) + " not found"
+
+def test_upload_non_video_file():
+    # Fetch an existing project and get its project UUID
+    response = client.get("/projects")
+    assert response.status_code == 200
+    data = response.json()
+    project_id = data[0]["id"]
+
+    # Try to upload it
+    upload_response = client.post(
+        f"/projects/{project_id}/videos",
+        files={"video": open("./test_videos/test-screenshot.png", "rb")}
+    )
+    assert upload_response.status_code == 400
+    data = upload_response.json()
+    assert data["message"] == "Video test-screenshot.png is not of content-type video/mp4"
