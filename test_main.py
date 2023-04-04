@@ -137,12 +137,6 @@ def test_upload_one_video():
     assert len(data["video_ids"]) == 1
     assert data["video_ids"][0] == video_id
 
-    # Fetching all video IDs related to a non-UUID project ID should return an error
-    bad_response = client.get(f"/projects/{project_id}4321abc/videos")
-    assert bad_response.status_code == 400
-    data = response.json()
-    assert data["message"] == "Project ID " + str(project_id) + "4321abc is not a valid UUID"
-
 
 def test_upload_video_to_nonexistent_project():
     # Uploading to a non-existent project should fail
@@ -171,3 +165,11 @@ def test_upload_non_video_file():
     assert upload_response.status_code == 400
     data = upload_response.json()
     assert data["message"] == "Video test-screenshot.png is not of content-type video/mp4"
+
+def test_bad_fetch_all_videos_for_a_project():
+    # Fetching all video IDs related to a non-UUID project ID should return an error
+    bad_response = client.get(f"/projects/4321abc/videos")
+    assert bad_response.status_code == 400
+    data = bad_response.json()
+    assert data["message"] == "Project ID 4321abc is not a valid UUID"
+
