@@ -179,13 +179,27 @@ def get_project_labeled_images(project_id: str):
 
 
 @app.get("/projects/{project_id}/videos")
-def get_project_videos(project_id: str):
+def get_project_videos(project_id: str, db: Session = Depends(get_db)):
     # TODO: use project_id to retrieve list of video_ids
     # associated with this project
 
+    # Validate that project_id is a valid UUID
+    try:
+        uuid.UUID(project_id)
+    except:
+        return JSONResponse(status_code=400, content={"message": "Project ID " + project_id + " is not a valid UUID"})
+    
+    res = crud.get_project_by_id(db, project_id)
+
+    if res == None:
+        return JSONResponse(status_code=404, content={"message": "Project with ID " + project_id + " not found"})
+
+    rows_returned = crud.get_videos_by_project_id(db, project_id)
+    video_ids = [row[0] for row in rows_returned]
+
     return {
-        "id": project_id,
-        "video_ids": []
+        "project_id": project_id,
+        "video_ids": video_ids
     }
 
 @app.post("/projects/{project_id}/videos")
