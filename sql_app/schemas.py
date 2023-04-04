@@ -55,8 +55,6 @@ class Video(VideoBase):
     project_id: UUID
     name: str
     video_url: str
-    frame_features_url: str
-    frame_similarity_url: str
     date_uploaded: date
 
     class Config:

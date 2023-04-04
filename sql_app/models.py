@@ -25,8 +25,6 @@ class Video(Base):
     id = Column('id', Uuid, primary_key=True, index=True, unique=True, server_default=text("gen_random_uuid()"))
     name = Column('name', String, unique=True)
     video_url = Column('video_url', String)
-    frame_features_url = Column('frame_features_url', String)
-    frame_similarity_url = Column('frame_similarity_url', String)
     date_uploaded = Column('date_uploaded', Date)
     project_id = Column('project_id', Uuid, ForeignKey("projects.id"))
 

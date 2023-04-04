@@ -395,41 +395,6 @@ def get_random_frames(video_id: str, count: int = 10):
         ]
     }
 
-# TODO: should be called by get_video_frames
-# TODO: should call calculate_frame_similarity and 
-# get_frame_inferences
-def extract_image_features(video_id: str):
-    # TODO: use video_id to fetch numpy file containing
-    # image features of all frames in this video
-
-    # TODO: if features file has not yet been created, 
-    # create one, upload to cloud storage, and insert URL 
-    # into Videos table in the database
-
-    return {
-        "features": {
-            "video_id": video_id,
-            "frame_features_url": "frame-features-url"
-        }
-    }
-
-
-# TODO: should be called by extract_image_features
-def calculate_frame_similarity(video_id: str):
-    # TODO: use video_id to fetch numpy file containing
-    # UMAP similarity embedding of all frames in this video
-
-    # TODO: if similarity file has not yet been created, 
-    # create one, upload to cloud storage, and insert URL 
-    # into Videos table in the database
-
-    return {
-        "similarity": {
-            "video_id": video_id,
-            "frame_similarity_url": "frame-similarity-url"
-        }
-    }
-
 
 ###############################################################
 # Frames endpoints
@@ -449,63 +414,6 @@ def get_frame(frame_id: str):
                 "human_reviewed": False
             }
     }
-
-
-@app.get("/frames/{frame_id}/most-similar-frames")
-def get_most_similar_frames(frame_id: str, count: int = 10):
-    # TODO: use the similarity numpy file to fetch a set of frames
-    # that are most similar to the specified one and have not yet
-    # been human-reviewed
-    # I think will need to get the frame_similarity_url from the
-    # video that this frame belongs to
-
-    return {
-        "frames": [
-            {
-                "id": "uuid-f1",
-                "project_id": "uuid-p1",
-                "video_id": "uuid-v1",
-                "url": "frame-url-1",
-                "human_reviewed": False
-            },
-            {
-                "id": "uuid-f2",
-                "project_id": "uuid-p1",
-                "video_id": "uuid-v1",
-                "url": "frame-url-2",
-                "human_reviewed": False
-            }
-        ]
-    }
-
-
-@app.get("/frames/{frame_id}/least-similar-frames")
-def get_least_similar_frames(frame_id: str, count: int = 10):
-    # TODO: use the similarity numpy file to fetch a set of frames
-    # that are least similar to the specified one and have not yet
-    # been human-reviewed
-    # I think will need to get the frame_similarity_url from the
-    # video that this frame belongs to
-
-    return {
-        "frames": [
-            {
-                "id": "uuid-f1",
-                "project_id": "uuid-p1",
-                "video_id": "uuid-v1",
-                "url": "frame-url-1",
-                "human_reviewed": False
-            },
-            {
-                "id": "uuid-f2",
-                "project_id": "uuid-p1",
-                "video_id": "uuid-v1",
-                "url": "frame-url-2",
-                "human_reviewed": False
-            }
-        ]
-    }
-
 
 @app.get("/frames/{frame_id}/inferences")
 def get_frame_inferences(frame_id: str):
