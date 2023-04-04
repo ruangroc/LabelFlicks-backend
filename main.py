@@ -180,9 +180,6 @@ def get_project_labeled_images(project_id: str):
 
 @app.get("/projects/{project_id}/videos")
 def get_project_videos(project_id: str, db: Session = Depends(get_db)):
-    # TODO: use project_id to retrieve list of video_ids
-    # associated with this project
-
     # Validate that project_id is a valid UUID
     try:
         uuid.UUID(project_id)
@@ -277,25 +274,30 @@ async def upload_project_video(project_id: str, video: UploadFile, db: Session =
 # Videos endpoints
 ###############################################################
 
-@app.get("/videos/{video_id}")
-def get_video(video_id: str):
-    # TODO: use video_id to fetch video information from database
-    # TODO: calculate number_of_frames and percent_labeled by
-    # querying the frames table
+@app.get("/videos/{video_id}", response_model=schemas.VideoResponse)
+def get_video(video_id: str, db: Session = Depends(get_db)):
+    # Validate that video_id is a valid UUID
+    try:
+        uuid.UUID(video_id)
+    except:
+        return JSONResponse(status_code=400, content={"message": "Video ID " + video_id + " is not a valid UUID"})
+    
+    res = crud.get_video_by_id(db, video_id)
 
-    return {
-        "video": {
-            "id": video_id,
-            "name": "video-name",
-            "video_url": "video-url",
-            "frame_features_url": "frame-features-url",
-            "frame_similarity_url": "frame-similarity-url",
-            "date_uploaded": "datetime-value",
-            "size_in_bytes": 1383234,
-            "number_of_frames": 2500,
-            "percent_labeled": 10 
-        }
-    }
+    if res == None:
+        return JSONResponse(status_code=404, content={"message": "Video with ID " + video_id + " not found"})
+
+    # Convert from database query response model to response model
+    video = schemas.VideoResponse.parse_obj({
+        "id": res.id,
+        "project_id": res.project_id,
+        "name": res.name,
+        "date_uploaded": res.date_uploaded,
+        "percent_labeled": crud.get_video_percent_frames_reviewed(db, res.id),
+        "number_of_frames": crud.get_video_frames_count(db, res.id)
+    })
+
+    return video
 
 
 @app.delete("/videos/{video_id}")

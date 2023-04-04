@@ -137,6 +137,18 @@ def test_upload_one_video():
     assert len(data["video_ids"]) == 1
     assert data["video_ids"][0] == video_id
 
+    # Fetching the just-uploaded video should return additional information
+    video_response = client.get(f"/videos/{video_id}")
+    assert video_response.status_code == 200
+    data = video_response.json()
+    assert data["id"] == video_id
+    assert data["project_id"] == project_id
+    assert data["name"] == test_video_name
+    assert data["percent_labeled"] == 0.0
+
+    # TODO: change after video preprocessing implemented
+    assert data["number_of_frames"] == 0  
+
 
 def test_upload_video_to_nonexistent_project():
     # Uploading to a non-existent project should fail
@@ -168,8 +180,29 @@ def test_upload_non_video_file():
 
 def test_bad_fetch_all_videos_for_a_project():
     # Fetching all video IDs related to a non-UUID project ID should return an error
-    bad_response = client.get(f"/projects/4321abc/videos")
+    bad_response = client.get("/projects/4321abc/videos")
     assert bad_response.status_code == 400
     data = bad_response.json()
     assert data["message"] == "Project ID 4321abc is not a valid UUID"
+
+    # Fetching with a UUID that doesn't exist in the database should return an error
+    new_uuid = uuid.uuid4()
+    bad_response = client.get(f"/projects/{new_uuid}/videos")
+    assert bad_response.status_code == 404
+    data = bad_response.json()
+    assert data["message"] == "Project with ID " + str(new_uuid) + " not found"
+
+def test_bad_fetch_one_video():
+    # Fetching a video with a non-UUID video ID should return an error
+    bad_response = client.get("/videos/4321abc")
+    assert bad_response.status_code == 400
+    data = bad_response.json()
+    assert data["message"] == "Video ID 4321abc is not a valid UUID"
+
+    # Fetching with a UUID that doesn't exist in the database should return an error
+    new_uuid = uuid.uuid4()
+    bad_response = client.get(f"/videos/{new_uuid}")
+    assert bad_response.status_code == 404
+    data = bad_response.json()
+    assert data["message"] == "Video with ID " + str(new_uuid) + " not found"
 

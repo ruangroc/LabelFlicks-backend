@@ -82,6 +82,28 @@ def get_video_by_name(db: Session, video_name: str):
 def get_videos_by_project_id(db: Session, project_id: Uuid):
     return db.query(models.Video.id).filter(models.Video.project_id == project_id).all()
 
+def get_video_by_id(db: Session, video_id: Uuid):
+    return db.query(models.Video).filter(models.Video.id == video_id).first()
+
+def get_video_frames_count(db: Session, video_id: Uuid):
+    video = db.query(models.Video).filter(models.Video.id == video_id).first()
+    return len(video.frames)
+
+def get_video_percent_frames_reviewed(db: Session, video_id: Uuid):
+    video = db.query(models.Video).filter(models.Video.id == video_id).first()
+
+    # If no frames exist for this video, no need to calculate percent reviewed
+    total = len(video.frames)
+    if total == 0:
+        return 0.0
+    
+    reviewed = 0
+    for i in range(total):
+        if video.frames[i].human_reviewed:
+            reviewed += 1
+    return round(100*(reviewed / total), 2)
+
+
 ###############################################################
 # frames table
 ###############################################################
