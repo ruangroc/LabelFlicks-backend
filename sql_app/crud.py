@@ -80,7 +80,7 @@ def get_video_by_name(db: Session, video_name: str):
     return db.query(models.Video).filter(models.Video.name == video_name).first()
 
 def get_videos_by_project_id(db: Session, project_id: Uuid):
-    return db.query(models.Video.id).filter(models.Video.project_id == project_id).all()
+    return db.query(models.Video).filter(models.Video.project_id == project_id).all()
 
 def get_video_by_id(db: Session, video_id: Uuid):
     return db.query(models.Video).filter(models.Video.id == video_id).first()

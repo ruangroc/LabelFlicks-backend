@@ -134,8 +134,8 @@ def test_upload_one_video():
     assert fetch_response.status_code == 200
     data = fetch_response.json()
     assert data["project_id"] == project_id
-    assert len(data["video_ids"]) == 1
-    assert data["video_ids"][0] == video_id
+    assert len(data["videos"]) == 1
+    assert data["videos"][0]["id"] == video_id
 
     # Fetching the just-uploaded video should return additional information
     video_response = client.get(f"/videos/{video_id}")

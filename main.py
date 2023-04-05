@@ -192,11 +192,22 @@ def get_project_videos(project_id: str, db: Session = Depends(get_db)):
         return JSONResponse(status_code=404, content={"message": "Project with ID " + project_id + " not found"})
 
     rows_returned = crud.get_videos_by_project_id(db, project_id)
-    video_ids = [row[0] for row in rows_returned]
+    videos = []
+    for row in rows_returned:
+        # Convert from database query response model to response model
+        video = schemas.VideoResponse.parse_obj({
+            "id": row.id,
+            "project_id": row.project_id,
+            "name": row.name,
+            "date_uploaded": row.date_uploaded,
+            "percent_labeled": crud.get_video_percent_frames_reviewed(db, row.id),
+            "number_of_frames": crud.get_video_frames_count(db, row.id)
+        })
+        videos.append(video)
 
     return {
         "project_id": project_id,
-        "video_ids": video_ids
+        "videos": videos
     }
 
 @app.post("/projects/{project_id}/videos")
