@@ -17,10 +17,7 @@ def get_projects(db: Session, skip: int = 0, limit: int = 100):
 
 # POST /projects
 def create_project(db: Session, project: schemas.ProjectCreate):
-    db_project = models.Project(
-        name=project.name, 
-        frame_extraction_rate=project.frame_extraction_rate
-    )
+    db_project = models.Project(name=project.name, )
     db.add(db_project)
     db.commit()
     db.refresh(db_project)

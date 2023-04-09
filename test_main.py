@@ -25,12 +25,11 @@ def test_create_and_get_first_project():
 
     response = client.post(
         "/projects",
-        json={"name": "testproject1", "frame_extraction_rate": 1},
+        json={"name": "testproject1"},
     )
     assert response.status_code == 200, response.text
     data = response.json()
     assert data["name"] == "testproject1"
-    assert data["frame_extraction_rate"] == 1
     assert data["percent_labeled"] == 0
     assert "id" in data
     project_id1 = data["id"]
@@ -39,7 +38,6 @@ def test_create_and_get_first_project():
     assert response.status_code == 200, response.text
     data = response.json()
     assert data["name"] == "testproject1"
-    assert data["frame_extraction_rate"] == 1
     assert data["percent_labeled"] == 0
     assert data["id"] == project_id1
 
@@ -48,12 +46,11 @@ def test_create_and_try_get_second_project():
 
     response = client.post(
         "/projects",
-        json={"name": "testproject2", "frame_extraction_rate": 2},
+        json={"name": "testproject2"},
     )
     assert response.status_code == 200, response.text
     data = response.json()
     assert data["name"] == "testproject2"
-    assert data["frame_extraction_rate"] == 2
     assert data["percent_labeled"] == 0
     assert "id" in data
     project_id2 = data["id"]
@@ -68,7 +65,6 @@ def test_create_and_try_get_second_project():
     assert response.status_code == 200, response.text
     data = response.json()
     assert data["name"] == "testproject2"
-    assert data["frame_extraction_rate"] == 2
     assert data["percent_labeled"] == 0
     assert data["id"] == project_id2
 
@@ -82,7 +78,7 @@ def test_get_all_projects():
 def test_create_project_with_same_name():
     response = client.post(
         "/projects",
-        json={"name": "testproject1", "frame_extraction_rate": 1},
+        json={"name": "testproject1"},
     )
     assert response.status_code == 400
     data = response.json()
@@ -93,12 +89,11 @@ def test_upload_one_video():
     project_id = ""
     response = client.post(
         "/projects",
-        json={"name": "testproject3", "frame_extraction_rate": 1},
+        json={"name": "testproject3"},
     )
     assert response.status_code == 200, response.text
     data = response.json()
     assert data["name"] == "testproject3"
-    assert data["frame_extraction_rate"] == 1
     assert data["percent_labeled"] == 0
     assert "id" in data
     project_id = data["id"]

@@ -11,7 +11,6 @@ class Project(Base):
     # Represents the columns in the projects table
     id = Column('id', Uuid, primary_key=True, index=True, unique=True, server_default=text("gen_random_uuid()"))
     name = Column('name', String, unique=True)
-    frame_extraction_rate = Column('frame_extraction_rate', Integer)
 
     # Fetch the items from the database that has foreign key pointing
     # to this record in the projects table
