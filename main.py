@@ -69,7 +69,6 @@ def get_all_projects(db: Session = Depends(get_db)):
         new_project = schemas.ExistingProject.parse_obj({
             "id": project.id,
             "name": project.name,
-            "frame_extraction_rate": project.frame_extraction_rate,
             "percent_labeled": crud.get_percent_frames_reviewed(db, project.id),
             "video_count": crud.get_video_count(db, project.id)
         })
@@ -80,10 +79,6 @@ def get_all_projects(db: Session = Depends(get_db)):
 
 @app.post("/projects", response_model=schemas.ExistingProject)
 def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)):
-    # TODO: validate frame_extraction rate is in expected range,
-    # and later the UI can also help enforce that,
-    # else default to 1 frame per second extraction rate
-
     if crud.get_project_by_name(db, project.name):
         return JSONResponse(status_code=400, content={"message": "Error: there is already a project named " + project.name})
 
@@ -107,7 +102,6 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
     new_project = schemas.ExistingProject.parse_obj({
         "id": res.id,
         "name": res.name,
-        "frame_extraction_rate": res.frame_extraction_rate,
         "percent_labeled": 0.0,
         "video_count": 0
     })
@@ -132,7 +126,6 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
     project = schemas.ExistingProject.parse_obj({
         "id": res.id,
         "name": res.name,
-        "frame_extraction_rate": res.frame_extraction_rate,
         "percent_labeled": crud.get_percent_frames_reviewed(db, res.id),
         "video_count": crud.get_video_count(db, res.id)
     })
@@ -149,7 +142,6 @@ async def rename_project(project_id: str, project: schemas.ProjectCreate):
         "project": {
             "id": project_id,
             "name": project["name"],
-            "frame_extraction_rate": 1,
             "percent_labeled": 10
         }
     }
@@ -307,8 +299,7 @@ def get_video_frames(video_id: str):
     # this video from the database
 
     # TODO: if there are no frames yet, then extract
-    # them using the frame_extraction_rate specified
-    # for the project
+    # them at a rate of 1 frame per second
 
     return {
         "frames": [
