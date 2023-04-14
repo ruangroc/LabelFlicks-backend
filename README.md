@@ -24,6 +24,8 @@ Note: the Azure lines are only required if you want the server to store uploaded
 
 ### Step 3: Start the FastAPI server
 
+Make sure the virtualenv is activated: `. venv/Scripts/activate` or `. venv/bin/activate`
+
 To start the server with auto-reloading capability (restart upon detecting changes): `uvicorn main:app --port=5000 --reload`
 
 To start the server without auto-reloading: `uvicorn main:app --port=5000`
@@ -55,6 +57,11 @@ POSTGRES_TEST_DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgr
 
 Note: it's fine to use the same `.env` file in the previous section, just make sure that `TEST_ENVIRONMENT` is set to the value you want before you run the tests or the server.
 
+### Step 3: Run the tests
+
+Make sure the virtualenv is activated: `. venv/Scripts/activate` or `. venv/bin/activate`
+
+Then start the tests using this command: `pytest`
 
 
 ## Miscellaneous notes and useful commands for development

@@ -62,6 +62,14 @@ class Video(VideoBase):
     class Config:
         orm_mode = True
 
+# What we want to return to the client
+class VideoResponse(VideoBase):
+    id: UUID
+    project_id: UUID
+    name: str
+    date_uploaded: date
+    percent_labeled: float
+    number_of_frames: int
 
 ###############################################################
 # Frame schemas

@@ -54,6 +54,25 @@ app.add_middleware(
 
 
 ###############################################################
+# Utility functions
+###############################################################
+
+# Useful for calculating percent of frames reviewed per project
+# or per video in a project
+def calculate_percent_frames_reviewed(object):
+    # If no frames exist for this video, no need to calculate percent reviewed
+    total = len(object.frames)
+    if total == 0:
+        return 0.0
+    
+    reviewed = 0
+    for i in range(total):
+        if object.frames[i].human_reviewed:
+            reviewed += 1
+    return round(100*(reviewed / total), 2)
+
+
+###############################################################
 # Projects endpoints
 ###############################################################
 
@@ -69,8 +88,8 @@ def get_all_projects(db: Session = Depends(get_db)):
         new_project = schemas.ExistingProject.parse_obj({
             "id": project.id,
             "name": project.name,
-            "percent_labeled": crud.get_percent_frames_reviewed(db, project.id),
-            "video_count": crud.get_video_count(db, project.id)
+            "percent_labeled": calculate_percent_frames_reviewed(project),
+            "video_count": len(project.videos)
         })
         returned_projects.append(new_project)
     
@@ -126,8 +145,8 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
     project = schemas.ExistingProject.parse_obj({
         "id": res.id,
         "name": res.name,
-        "percent_labeled": crud.get_percent_frames_reviewed(db, res.id),
-        "video_count": crud.get_video_count(db, res.id)
+        "percent_labeled": calculate_percent_frames_reviewed(res),
+        "video_count": len(res.videos)
     })
 
     return project
@@ -179,13 +198,35 @@ def get_project_labeled_images(project_id: str):
 
 
 @app.get("/projects/{project_id}/videos")
-def get_project_videos(project_id: str):
-    # TODO: use project_id to retrieve list of video_ids
-    # associated with this project
+def get_project_videos(project_id: str, db: Session = Depends(get_db)):
+    # Validate that project_id is a valid UUID
+    try:
+        uuid.UUID(project_id)
+    except:
+        return JSONResponse(status_code=400, content={"message": "Project ID " + project_id + " is not a valid UUID"})
+    
+    res = crud.get_project_by_id(db, project_id)
+
+    if res == None:
+        return JSONResponse(status_code=404, content={"message": "Project with ID " + project_id + " not found"})
+
+    rows_returned = crud.get_videos_by_project_id(db, project_id)
+    videos = []
+    for row in rows_returned:
+        # Convert from database query response model to response model
+        video = schemas.VideoResponse.parse_obj({
+            "id": row.id,
+            "project_id": row.project_id,
+            "name": row.name,
+            "date_uploaded": row.date_uploaded,
+            "percent_labeled": calculate_percent_frames_reviewed(row),
+            "number_of_frames": len(row.frames)
+        })
+        videos.append(video)
 
     return {
-        "id": project_id,
-        "video_ids": []
+        "project_id": project_id,
+        "videos": videos
     }
 
 @app.post("/projects/{project_id}/videos")
@@ -263,25 +304,30 @@ async def upload_project_video(project_id: str, video: UploadFile, db: Session =
 # Videos endpoints
 ###############################################################
 
-@app.get("/videos/{video_id}")
-def get_video(video_id: str):
-    # TODO: use video_id to fetch video information from database
-    # TODO: calculate number_of_frames and percent_labeled by
-    # querying the frames table
+@app.get("/videos/{video_id}", response_model=schemas.VideoResponse)
+def get_video(video_id: str, db: Session = Depends(get_db)):
+    # Validate that video_id is a valid UUID
+    try:
+        uuid.UUID(video_id)
+    except:
+        return JSONResponse(status_code=400, content={"message": "Video ID " + video_id + " is not a valid UUID"})
+    
+    res = crud.get_video_by_id(db, video_id)
 
-    return {
-        "video": {
-            "id": video_id,
-            "name": "video-name",
-            "video_url": "video-url",
-            "frame_features_url": "frame-features-url",
-            "frame_similarity_url": "frame-similarity-url",
-            "date_uploaded": "datetime-value",
-            "size_in_bytes": 1383234,
-            "number_of_frames": 2500,
-            "percent_labeled": 10 
-        }
-    }
+    if res == None:
+        return JSONResponse(status_code=404, content={"message": "Video with ID " + video_id + " not found"})
+
+    # Convert from database query response model to response model
+    video = schemas.VideoResponse.parse_obj({
+        "id": res.id,
+        "project_id": res.project_id,
+        "name": res.name,
+        "date_uploaded": res.date_uploaded,
+        "percent_labeled": calculate_percent_frames_reviewed(res),
+        "number_of_frames": len(res.frames)
+    })
+
+    return video
 
 
 @app.delete("/videos/{video_id}")
