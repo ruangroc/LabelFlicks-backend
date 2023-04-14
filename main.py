@@ -54,6 +54,25 @@ app.add_middleware(
 
 
 ###############################################################
+# Utility functions
+###############################################################
+
+# Useful for calculating percent of frames reviewed per project
+# or per video in a project
+def calculate_percent_frames_reviewed(object):
+    # If no frames exist for this video, no need to calculate percent reviewed
+    total = len(object.frames)
+    if total == 0:
+        return 0.0
+    
+    reviewed = 0
+    for i in range(total):
+        if object.frames[i].human_reviewed:
+            reviewed += 1
+    return round(100*(reviewed / total), 2)
+
+
+###############################################################
 # Projects endpoints
 ###############################################################
 
@@ -69,8 +88,8 @@ def get_all_projects(db: Session = Depends(get_db)):
         new_project = schemas.ExistingProject.parse_obj({
             "id": project.id,
             "name": project.name,
-            "percent_labeled": crud.get_percent_frames_reviewed(db, project.id),
-            "video_count": crud.get_video_count(db, project.id)
+            "percent_labeled": calculate_percent_frames_reviewed(project),
+            "video_count": len(project.videos)
         })
         returned_projects.append(new_project)
     
@@ -126,8 +145,8 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
     project = schemas.ExistingProject.parse_obj({
         "id": res.id,
         "name": res.name,
-        "percent_labeled": crud.get_percent_frames_reviewed(db, res.id),
-        "video_count": crud.get_video_count(db, res.id)
+        "percent_labeled": calculate_percent_frames_reviewed(res),
+        "video_count": len(res.videos)
     })
 
     return project
@@ -200,8 +219,8 @@ def get_project_videos(project_id: str, db: Session = Depends(get_db)):
             "project_id": row.project_id,
             "name": row.name,
             "date_uploaded": row.date_uploaded,
-            "percent_labeled": crud.get_video_percent_frames_reviewed(db, row.id),
-            "number_of_frames": crud.get_video_frames_count(db, row.id)
+            "percent_labeled": calculate_percent_frames_reviewed(row),
+            "number_of_frames": len(row.frames)
         })
         videos.append(video)
 
@@ -304,8 +323,8 @@ def get_video(video_id: str, db: Session = Depends(get_db)):
         "project_id": res.project_id,
         "name": res.name,
         "date_uploaded": res.date_uploaded,
-        "percent_labeled": crud.get_video_percent_frames_reviewed(db, res.id),
-        "number_of_frames": crud.get_video_frames_count(db, res.id)
+        "percent_labeled": calculate_percent_frames_reviewed(res),
+        "number_of_frames": len(res.frames)
     })
 
     return video
