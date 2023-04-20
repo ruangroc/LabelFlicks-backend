@@ -44,8 +44,7 @@ class VideoBase(BaseModel):
     project_id: UUID
     
 
-# When uploading a video, we won't know its id, frame features url,
-# similarity url, video url, or current date
+# When uploading a video, we won't know its id, url, or current date
 class VideoCreate(VideoBase):
     pass
 
@@ -55,8 +54,6 @@ class Video(VideoBase):
     project_id: UUID
     name: str
     video_url: str
-    frame_features_url: str
-    frame_similarity_url: str
     date_uploaded: date
 
     class Config:
