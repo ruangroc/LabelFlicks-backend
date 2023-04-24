@@ -1,8 +1,8 @@
-from fastapi import Depends, FastAPI, File, UploadFile
+from fastapi import Depends, FastAPI, BackgroundTasks, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uuid
-from typing import Any, List, Union
+from typing import List
 
 # Data classes for post request bodies
 from sql_app import schemas, models, crud
@@ -14,11 +14,19 @@ import os
 from dotenv import load_dotenv
 from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
 
+# Computer vision related imports
+import numpy as np
+import cv2
+from io import BytesIO
+import tempfile
+
+
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
 # Create FastAPI instance
 app = FastAPI()
+
 
 # Fetch database instance
 def get_db():
@@ -27,6 +35,7 @@ def get_db():
         yield db
     finally:
         db.close()
+
 
 # Connect to Azure storage account
 load_dotenv()
@@ -57,6 +66,7 @@ app.add_middleware(
 # Utility functions
 ###############################################################
 
+
 # Useful for calculating percent of frames reviewed per project
 # or per video in a project
 def calculate_percent_frames_reviewed(object):
@@ -64,17 +74,64 @@ def calculate_percent_frames_reviewed(object):
     total = len(object.frames)
     if total == 0:
         return 0.0
-    
+
     reviewed = 0
     for i in range(total):
         if object.frames[i].human_reviewed:
             reviewed += 1
-    return round(100*(reviewed / total), 2)
+    return round(100 * (reviewed / total), 2)
+
+
+# Preprocessing a video involves extracting frames (1 fps)
+# and using a pretrained object detection model to generate
+# initial bounding boxes and labels. This will be run in
+# a FastAPI background task.
+def preprocess_video(video_bytes, storage_location, video_id, db: Session):
+    # Video is sent as bytes but OpenCV's VideoCapture only reads
+    # videos from files, so using a temp file here
+    with tempfile.NamedTemporaryFile() as temp:
+        temp.write(video_bytes)
+        vidcap = cv2.VideoCapture(temp.name)
+
+    # Figure out number of frames and frames per second rate
+    num_frames = vidcap.get(cv2.CAP_PROP_FRAME_COUNT)
+    fps = vidcap.get(cv2.CAP_PROP_FPS)
+
+    index = 0
+    for frame in np.arange(0, num_frames, fps):
+        vidcap.set(cv2.CAP_PROP_POS_FRAMES, frame)
+        hasFrames, image = vidcap.read()
+        if hasFrames:
+            # Save frame as an image in desired storage path
+            if storage_location["azure"]:
+                # First connect to storage container using the desired destination path
+                blob_client = blob_service_client.get_blob_client(
+                    container=storage_location["container"],
+                    blob=storage_location["path"] + str(index) + ".jpg",
+                )
+
+                # Convert from OpenCV's output array into image bytes before uploading
+                is_success, buffer = cv2.imencode(".jpg", image)
+                if is_success:
+                    image_bytes = BytesIO(buffer)
+                    blob_client.upload_blob(image_bytes)
+            else:
+                cv2.imwrite(
+                    os.path.join(storage_location["path"], str(index) + ".jpg"), image
+                )
+            index += 1
+
+            # TODO: apply pretrained object detection model to each frame and
+            # save bounding box info per frame
+
+    # Update done_processing field for this video
+    crud.set_video_preprocessing_status(db, video_id, True)
 
 
 ###############################################################
 # Projects endpoints
 ###############################################################
+
 
 @app.get("/projects", response_model=List[schemas.ExistingProject])
 def get_all_projects(db: Session = Depends(get_db)):
@@ -82,32 +139,47 @@ def get_all_projects(db: Session = Depends(get_db)):
     returned_projects = []
 
     # Convert each project from database query response model to response model
-        # and also get most up to date calculations for video count and percent
-        # of frames reviewed
+    # and also get most up to date calculations for video count and percent
+    # of frames reviewed
     for project in projects:
-        new_project = schemas.ExistingProject.parse_obj({
-            "id": project.id,
-            "name": project.name,
-            "percent_labeled": calculate_percent_frames_reviewed(project),
-            "video_count": len(project.videos)
-        })
+        new_project = schemas.ExistingProject.parse_obj(
+            {
+                "id": project.id,
+                "name": project.name,
+                "percent_labeled": calculate_percent_frames_reviewed(project),
+                "video_count": len(project.videos),
+            }
+        )
         returned_projects.append(new_project)
-    
+
     return returned_projects
 
 
 @app.post("/projects", response_model=schemas.ExistingProject)
 def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)):
     if crud.get_project_by_name(db, project.name):
-        return JSONResponse(status_code=400, content={"message": "Error: there is already a project named " + project.name})
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Error: there is already a project named " + project.name
+            },
+        )
 
     try:
         res = crud.create_project(db, project)
     except Exception as e:
-        return JSONResponse(status_code=400, content={"message": "Unable to create project named " + project.name + " error: " + str(e)})
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Unable to create project named "
+                + project.name
+                + " error: "
+                + str(e)
+            },
+        )
 
     container_name = str(res.name)
-    
+
     if test_status != "TRUE":
         # If connected to Azure, create a container in the blob storage account
         # Otherwise, create a directory in the local file system
@@ -116,14 +188,11 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
         else:
             if not os.path.exists("./local_projects/" + container_name):
                 os.makedirs("./local_projects/" + container_name)
-    
+
     # Convert from database query response model to response model
-    new_project = schemas.ExistingProject.parse_obj({
-        "id": res.id,
-        "name": res.name,
-        "percent_labeled": 0.0,
-        "video_count": 0
-    })
+    new_project = schemas.ExistingProject.parse_obj(
+        {"id": res.id, "name": res.name, "percent_labeled": 0.0, "video_count": 0}
+    )
 
     return new_project
 
@@ -134,20 +203,28 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
     try:
         uuid.UUID(project_id)
     except:
-        return JSONResponse(status_code=400, content={"message": "Project ID " + project_id + " is not a valid UUID"})
-    
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Project ID " + project_id + " is not a valid UUID"},
+        )
+
     res = crud.get_project_by_id(db, project_id)
 
     if res == None:
-        return JSONResponse(status_code=404, content={"message": "Project with ID " + project_id + " not found"})
-    
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Project with ID " + project_id + " not found"},
+        )
+
     # Convert from database query response model to response model
-    project = schemas.ExistingProject.parse_obj({
-        "id": res.id,
-        "name": res.name,
-        "percent_labeled": calculate_percent_frames_reviewed(res),
-        "video_count": len(res.videos)
-    })
+    project = schemas.ExistingProject.parse_obj(
+        {
+            "id": res.id,
+            "name": res.name,
+            "percent_labeled": calculate_percent_frames_reviewed(res),
+            "video_count": len(res.videos),
+        }
+    )
 
     return project
 
@@ -156,14 +233,11 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
 async def rename_project(project_id: str, project: schemas.ProjectCreate):
     # TODO: use project_id to update name of the project,
     # or return error for invalid id
-    
+
     return {
-        "project": {
-            "id": project_id,
-            "name": project["name"],
-            "percent_labeled": 10
-        }
+        "project": {"id": project_id, "name": project["name"], "percent_labeled": 10}
     }
+
 
 @app.delete("/projects/{project_id}")
 def delete_project(project_id: str):
@@ -179,22 +253,16 @@ def get_project_labels(project_id: str):
     # TODO: return list of labels (class names) that are used
     # for labeling boxes in this project
 
-    return {
-        "id": project_id,
-        "labels": []
-    }
+    return {"id": project_id, "labels": []}
 
 
 @app.get("/projects/{project_id}/labeled-images")
 def get_project_labeled_images(project_id: str):
-    # TODO: use project_id to retrieve all annotated images 
-    # contains (bounding boxes and class labels) for all 
+    # TODO: use project_id to retrieve all annotated images
+    # contains (bounding boxes and class labels) for all
     # frames from this project
 
-    return {
-        "id": project_id,
-        "labeled-images": []
-    }
+    return {"id": project_id, "labeled-images": []}
 
 
 @app.get("/projects/{project_id}/videos")
@@ -203,100 +271,180 @@ def get_project_videos(project_id: str, db: Session = Depends(get_db)):
     try:
         uuid.UUID(project_id)
     except:
-        return JSONResponse(status_code=400, content={"message": "Project ID " + project_id + " is not a valid UUID"})
-    
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Project ID " + project_id + " is not a valid UUID"},
+        )
+
     res = crud.get_project_by_id(db, project_id)
 
     if res == None:
-        return JSONResponse(status_code=404, content={"message": "Project with ID " + project_id + " not found"})
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Project with ID " + project_id + " not found"},
+        )
 
     rows_returned = crud.get_videos_by_project_id(db, project_id)
     videos = []
     for row in rows_returned:
         # Convert from database query response model to response model
-        video = schemas.VideoResponse.parse_obj({
-            "id": row.id,
-            "project_id": row.project_id,
-            "name": row.name,
-            "date_uploaded": row.date_uploaded,
-            "percent_labeled": calculate_percent_frames_reviewed(row),
-            "number_of_frames": len(row.frames)
-        })
+        video = schemas.VideoResponse.parse_obj(
+            {
+                "id": row.id,
+                "project_id": row.project_id,
+                "name": row.name,
+                "date_uploaded": row.date_uploaded,
+                "percent_labeled": calculate_percent_frames_reviewed(row),
+                "number_of_frames": len(row.frames),
+            }
+        )
         videos.append(video)
 
-    return {
-        "project_id": project_id,
-        "videos": videos
-    }
+    return {"project_id": project_id, "videos": videos}
+
 
 @app.post("/projects/{project_id}/videos")
-async def upload_project_video(project_id: str, video: UploadFile, db: Session = Depends(get_db)):
+async def upload_project_video(
+    project_id: str,
+    video: UploadFile,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     # Validate that project_id is a valid UUID
     try:
         uuid.UUID(project_id)
     except:
-        return JSONResponse(status_code=400, content={"message": "Project ID " + project_id + " is not a valid UUID"})
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Project ID " + project_id + " is not a valid UUID"},
+        )
 
     # Validate that the specified project exists in the database
     containing_project = crud.get_project_by_id(db, project_id)
     if containing_project == None:
-        return JSONResponse(status_code=404, content={"message": "Project with ID " + project_id + " not found"})
-    
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Project with ID " + project_id + " not found"},
+        )
+
     # Validate that the video has not already been uploaded
     duplicate_video = crud.get_video_by_name(db, video.filename)
     if duplicate_video:
-        return JSONResponse(status_code=400, content={"message": "Video " + video.filename + " has already been uploaded"})
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Video " + video.filename + " has already been uploaded"
+            },
+        )
 
     # Validate that the video file is in fact a video
     if video.content_type != "video/mp4":
-        return JSONResponse(status_code=400, content={"message": "Video " + video.filename + " is not of content-type video/mp4"})
+        return JSONResponse(
+            status_code=400,
+            content={
+                "message": "Video "
+                + video.filename
+                + " is not of content-type video/mp4"
+            },
+        )
 
     # Read the video file
     try:
         # Read video data as bytes
         contents = video.file.read()
     except Exception as e:
-        return JSONResponse(status_code=500, content={"message": "Failed to read video " + video.filename + " with error " + str(e)})
+        return JSONResponse(
+            status_code=500,
+            content={
+                "message": "Failed to read video "
+                + video.filename
+                + " with error "
+                + str(e)
+            },
+        )
+
+    project_name = containing_project.name
+    video_name = video.filename.replace(".mp4", "")
+    local_save_path = "./local_projects/" + project_name + "/" + video_name
+    storage_location = {
+        "azure": False,
+        "path": local_save_path + "/frames",
+        "container": "",
+    }
 
     # For tests, don't clutter workspace by uploading videos all the time
     if test_status != "TRUE":
+        # Upload video to the appropriate storage location (Azure or local file system)
         try:
-            # Upload video to the appropriate storage location (Azure or local file system)
-            container_name = containing_project.name
             if blob_service_client:
                 # If connected to Azure, upload video to project's blob storage container
-                blob_client = blob_service_client.get_blob_client(container=container_name, blob=video.filename)
+                # under the path video_name/video.mp4
+                # The storage container is already named after the project
+                blob_client = blob_service_client.get_blob_client(
+                    container=project_name, blob=video_name + "/" + video.filename
+                )
                 blob_client.upload_blob(contents)
+
+                # Set up appropriate information for saving extracted frames in Azure
+                storage_location["azure"] = True
+                storage_location["container"] = project_name
+                storage_location["path"] = video_name + "/frames"
             else:
                 # Otherwise, add to project directory in the local file system
-                local_path = "./local_projects/" + container_name + "/" + video.filename
-                if not os.path.exists(local_path):
-                    with open(local_path, "wb") as f:
+
+                # If project_name/video_name directory doesn't exist, create it
+                if not os.path.exists(local_save_path):
+                    os.mkdir(local_save_path)
+
+                # Save the video file
+                video_save_path = local_save_path + video.filename
+                if not os.path.exists(video_save_path):
+                    with open(video_save_path, "wb") as f:
                         f.write(contents)
+
+                # If project_name/video_name/frames directory doesn't exist, create it
+                if not os.path.exists(storage_location["path"]):
+                    os.mkdir(storage_location["path"])
+
         except Exception as e:
-            return JSONResponse(status_code=500, content={"message": "Failed to save video " + video.filename + " with error " + str(e)})
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "message": "Failed to save video "
+                    + video.filename
+                    + " with error "
+                    + str(e)
+                },
+            )
 
     try:
         # Insert new video into database
-        video_obj = schemas.VideoCreate.parse_obj({
-            "name": video.filename,
-            "project_id": containing_project.id
-        })
+        video_obj = schemas.VideoCreate.parse_obj(
+            {"name": video.filename, "project_id": containing_project.id}
+        )
         video_insert_response = crud.create_video(db, video_obj)
     except Exception as e:
-        return JSONResponse(status_code=500, content={"message": "Failed to insert video " + video.filename + " into database with error " + str(e)})
+        return JSONResponse(
+            status_code=500,
+            content={
+                "message": "Failed to insert video "
+                + video.filename
+                + " into database with error "
+                + str(e)
+            },
+        )
 
-    # TODO: send video to be preprocessed (using functions below), maybe using background child processes
+    # Preprocess the video as a background task
+    background_tasks.add_task(
+        preprocess_video, contents, storage_location, video_insert_response.id, db
+    )
 
     # Close the video file
     video.file.close()
 
     return JSONResponse(
-        status_code=200, 
-        content={
-            "id": project_id,
-            "video_id": str(video_insert_response.id)
-        }
+        status_code=200,
+        content={"id": project_id, "video_id": str(video_insert_response.id)},
     )
 
 
@@ -304,28 +452,38 @@ async def upload_project_video(project_id: str, video: UploadFile, db: Session =
 # Videos endpoints
 ###############################################################
 
+
 @app.get("/videos/{video_id}", response_model=schemas.VideoResponse)
 def get_video(video_id: str, db: Session = Depends(get_db)):
     # Validate that video_id is a valid UUID
     try:
         uuid.UUID(video_id)
     except:
-        return JSONResponse(status_code=400, content={"message": "Video ID " + video_id + " is not a valid UUID"})
-    
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Video ID " + video_id + " is not a valid UUID"},
+        )
+
     res = crud.get_video_by_id(db, video_id)
 
     if res == None:
-        return JSONResponse(status_code=404, content={"message": "Video with ID " + video_id + " not found"})
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Video with ID " + video_id + " not found"},
+        )
 
     # Convert from database query response model to response model
-    video = schemas.VideoResponse.parse_obj({
-        "id": res.id,
-        "project_id": res.project_id,
-        "name": res.name,
-        "date_uploaded": res.date_uploaded,
-        "percent_labeled": calculate_percent_frames_reviewed(res),
-        "number_of_frames": len(res.frames)
-    })
+    video = schemas.VideoResponse.parse_obj(
+        {
+            "id": res.id,
+            "project_id": res.project_id,
+            "name": res.name,
+            "date_uploaded": res.date_uploaded,
+            "percent_labeled": calculate_percent_frames_reviewed(res),
+            "number_of_frames": len(res.frames),
+            "done_preprocessing": res.done_preprocessing,
+        }
+    )
 
     return video
 
@@ -341,11 +499,8 @@ def delete_video(video_id: str):
 
 @app.get("/videos/{video_id}/frames")
 def get_video_frames(video_id: str):
-    # TODO: use video_id to fetch frames belonging to 
+    # TODO: use video_id to fetch frames belonging to
     # this video from the database
-
-    # TODO: if there are no frames yet, then extract
-    # them at a rate of 1 frame per second
 
     return {
         "frames": [
@@ -354,15 +509,15 @@ def get_video_frames(video_id: str):
                 "project_id": "uuid-p1",
                 "video_id": "uuid-v1",
                 "url": "frame-url-1",
-                "human_reviewed": False
+                "human_reviewed": False,
             },
             {
                 "id": "uuid-f2",
                 "project_id": "uuid-p1",
                 "video_id": "uuid-v1",
                 "url": "frame-url-2",
-                "human_reviewed": True
-            }
+                "human_reviewed": True,
+            },
         ]
     }
 
@@ -370,9 +525,9 @@ def get_video_frames(video_id: str):
 # count = query parameter for specifying how many frames to get
 @app.get("/videos/{video_id}/random-frames")
 def get_random_frames(video_id: str, count: int = 10):
-    # TODO: use video_id to fetch a random set of frames not yet 
+    # TODO: use video_id to fetch a random set of frames not yet
     # human-reviewed belonging to this video from the database
-    
+
     # TODO: use query parameter to specify how many to grab
     # default can be 10 frames
 
@@ -383,15 +538,15 @@ def get_random_frames(video_id: str, count: int = 10):
                 "project_id": "uuid-p1",
                 "video_id": "uuid-v1",
                 "url": "frame-url-1",
-                "human_reviewed": False
+                "human_reviewed": False,
             },
             {
                 "id": "uuid-f2",
                 "project_id": "uuid-p1",
                 "video_id": "uuid-v1",
                 "url": "frame-url-2",
-                "human_reviewed": False
-            }
+                "human_reviewed": False,
+            },
         ]
     }
 
@@ -400,26 +555,28 @@ def get_random_frames(video_id: str, count: int = 10):
 # Frames endpoints
 ###############################################################
 
+
 @app.get("/frames/{frame_id}")
 def get_frame(frame_id: str):
-    # TODO: use frame_id to fetch the requested frame from 
+    # TODO: use frame_id to fetch the requested frame from
     # the database
 
     return {
         "frame": {
-                "id": "uuid-f1",
-                "project_id": "uuid-p1",
-                "video_id": "uuid-v1",
-                "url": "frame-url-1",
-                "human_reviewed": False
-            }
+            "id": "uuid-f1",
+            "project_id": "uuid-p1",
+            "video_id": "uuid-v1",
+            "url": "frame-url-1",
+            "human_reviewed": False,
+        }
     }
+
 
 @app.get("/frames/{frame_id}/inferences")
 def get_frame_inferences(frame_id: str):
-    # TODO: run object detection inference on this frame, 
+    # TODO: run object detection inference on this frame,
     # insert any new bounding box or label information into
-    # the database as appropriate, return bounding box and 
+    # the database as appropriate, return bounding box and
     # label information for this frame (if any)
 
     return {
@@ -429,15 +586,15 @@ def get_frame_inferences(frame_id: str):
                 "frame_id": "uuid-f1",
                 "label": "label-name",
                 "url": "frame-url-1",
-                "human_reviewed": False
+                "human_reviewed": False,
             },
             {
                 "id": "uuid-f2",
                 "project_id": "uuid-p1",
                 "video_id": "uuid-v1",
                 "url": "frame-url-2",
-                "human_reviewed": False
-            }
+                "human_reviewed": False,
+            },
         ]
     }
 
@@ -445,7 +602,7 @@ def get_frame_inferences(frame_id: str):
 # format = query parameter for bounding box data format
 @app.get("/frames/{frame_id}/annotations")
 def get_frame_annotations(frame_id: str, format: str = "coco"):
-    # TODO: use project_id to retrieve all bounding box and 
+    # TODO: use project_id to retrieve all bounding box and
     # class label information for this frame
     # (no new object detection inference should be made)
 
@@ -463,7 +620,7 @@ def get_frame_annotations(frame_id: str, format: str = "coco"):
                 "x_min": 20,
                 "y_min": 40,
                 "width": 100,
-                "height": 200
+                "height": 200,
             }
-        ]
+        ],
     }
