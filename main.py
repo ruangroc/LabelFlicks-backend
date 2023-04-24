@@ -107,7 +107,7 @@ def preprocess_video(video_bytes, storage_location, video_id, db: Session):
                 # First connect to storage container using the desired destination path
                 blob_client = blob_service_client.get_blob_client(
                     container=storage_location["container"],
-                    blob=storage_location["path"] + str(index) + ".jpg",
+                    blob=storage_location["path"] + "/" + str(index) + ".jpg",
                 )
 
                 # Convert from OpenCV's output array into image bytes before uploading
