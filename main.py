@@ -121,6 +121,8 @@ def preprocess_video(video_bytes, storage_location, video_id, db: Session):
                 )
             index += 1
 
+            # TODO: insert each frame into the database
+            
             # TODO: apply pretrained object detection model to each frame and
             # save bounding box info per frame
 
@@ -296,6 +298,7 @@ def get_project_videos(project_id: str, db: Session = Depends(get_db)):
                 "date_uploaded": row.date_uploaded,
                 "percent_labeled": calculate_percent_frames_reviewed(row),
                 "number_of_frames": len(row.frames),
+                "done_preprocessing": row.done_preprocessing,
             }
         )
         videos.append(video)
