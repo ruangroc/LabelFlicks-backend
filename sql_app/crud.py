@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import Uuid
+from sqlalchemy import Uuid, Boolean, update
 
 from . import models, schemas
 
@@ -64,6 +64,14 @@ def get_videos_by_project_id(db: Session, project_id: Uuid):
 
 def get_video_by_id(db: Session, video_id: Uuid):
     return db.query(models.Video).filter(models.Video.id == video_id).first()
+
+def set_video_preprocessing_status(db: Session, video_id: Uuid, status: Boolean):
+    stmt = (
+        update(models.Video)
+        .where(models.Video.id == video_id)
+        .values(done_preprocessing=status)
+    )
+    db.execute(stmt)
 
 
 ###############################################################
