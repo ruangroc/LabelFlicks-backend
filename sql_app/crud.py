@@ -72,6 +72,7 @@ def set_video_preprocessing_status(db: Session, video_id: Uuid, status: Boolean)
         .values(done_preprocessing=status)
     )
     db.execute(stmt)
+    db.commit()
 
 
 ###############################################################
