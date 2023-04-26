@@ -228,6 +228,9 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
     if blob_service_client:
         blob_service_client.create_container(container_name)
     else:
+        if not os.path.exists("./local_projects"):
+            os.makedirs("./local_projects")
+
         if not os.path.exists("./local_projects/" + container_name):
             os.makedirs("./local_projects/" + container_name)
 
