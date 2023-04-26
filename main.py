@@ -228,9 +228,6 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
     if blob_service_client:
         blob_service_client.create_container(container_name)
     else:
-        if not os.path.exists("./local_projects"):
-            os.makedirs("./local_projects")
-
         if not os.path.exists("./local_projects/" + container_name):
             os.makedirs("./local_projects/" + container_name)
 
@@ -439,8 +436,8 @@ async def upload_project_video(
             # Otherwise, add to project directory in the local file system
 
             # If project_name/video_name directory doesn't exist, create it
-            # if not os.path.exists(local_save_path):
-            #     os.mkdir(local_save_path)
+            if not os.path.exists(local_save_path):
+                os.mkdir(local_save_path)
 
             # Save the video file
             video_save_path = local_save_path + video.filename
@@ -449,8 +446,8 @@ async def upload_project_video(
                     f.write(contents)
 
             # If project_name/video_name/frames directory doesn't exist, create it
-            # if not os.path.exists(storage_location["path"]):
-            #     os.mkdir(storage_location["path"])
+            if not os.path.exists(storage_location["path"]):
+                os.mkdir(storage_location["path"])
 
     except Exception as e:
         return JSONResponse(
