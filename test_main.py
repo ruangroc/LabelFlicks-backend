@@ -3,6 +3,7 @@ from sql_app.database import SessionLocal, engine
 from sql_app import models
 from main import app, get_db
 import uuid
+import time
 
 # Clear test database before creating new tables
 models.Base.metadata.drop_all(bind=engine)
@@ -111,6 +112,28 @@ def test_upload_one_video():
     assert video_id
     assert uuid.UUID(video_id)
 
+    # Fetching the just-uploaded video should return additional information
+    video_response = client.get(f"/videos/{video_id}")
+    assert video_response.status_code == 200
+    data = video_response.json()
+    assert data["id"] == video_id
+    assert data["project_id"] == project_id
+    assert data["name"] == test_video_name
+    assert data["percent_labeled"] == 0.0
+
+    # Preprocessing locally doesn't take long, these should be set
+    assert data["number_of_frames"] == 64  
+    assert data["done_preprocessing"] == True
+
+    # To double check that frames were inserted, call this
+    # additional endpoint as well
+    video_response = client.get(f"/videos/{video_id}/frames")
+    assert video_response.status_code == 200
+    data = video_response.json()
+    assert data["video_id"] == video_id
+    assert data["frames"]
+    assert len(data["frames"]) == 64
+
     # Uploading with invalid project UUID should fail
     response = client.post(
         f"/projects/{project_id}4321abc/videos",
@@ -136,18 +159,6 @@ def test_upload_one_video():
     assert data["project_id"] == project_id
     assert len(data["videos"]) == 1
     assert data["videos"][0]["id"] == video_id
-
-    # Fetching the just-uploaded video should return additional information
-    video_response = client.get(f"/videos/{video_id}")
-    assert video_response.status_code == 200
-    data = video_response.json()
-    assert data["id"] == video_id
-    assert data["project_id"] == project_id
-    assert data["name"] == test_video_name
-    assert data["percent_labeled"] == 0.0
-
-    # TODO: change after video preprocessing implemented
-    assert data["number_of_frames"] == 0  
 
 
 def test_upload_video_to_nonexistent_project():

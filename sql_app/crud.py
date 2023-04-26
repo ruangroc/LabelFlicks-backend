@@ -105,6 +105,14 @@ def insert_frames(db: Session, frames: List[schemas.FrameCreate]):
     db.commit()
 
 
+def get_frames_by_video_id(db: Session, video_id: Uuid):
+    return db.query(models.Frame).filter(models.Frame.video_id == video_id).all()
+
+
+def get_frames_by_project_id(db: Session, project_id: Uuid):
+    return db.query(models.Frame).filter(models.Frame.project_id == project_id).all()
+
+
 ###############################################################
 # bounding_boxes table
 ###############################################################

@@ -155,13 +155,20 @@ def preprocess_video(video_bytes, storage_location, video_id, project_id, db: Se
 
             # TODO: apply pretrained object detection model to each frame (generate bounding boxes)
 
+    print("Extracted", len(uploaded_frames), "frames to save")
+    print(type(uploaded_frames))
+
     # Insert all frames into the database
     crud.insert_frames(db, uploaded_frames)
+
+    print("Inserted frames into database")
 
     # TODO: insert all bounding box info into the database
 
     # Update done_processing field for this video
     crud.set_video_preprocessing_status(db, video_id, True)
+
+    print("Set done_preprocessing to True")
 
 
 ###############################################################
@@ -216,14 +223,13 @@ def create_project(project: schemas.ProjectCreate, db: Session = Depends(get_db)
 
     container_name = str(res.name)
 
-    if test_status != "TRUE":
-        # If connected to Azure, create a container in the blob storage account
-        # Otherwise, create a directory in the local file system
-        if blob_service_client:
-            blob_service_client.create_container(container_name)
-        else:
-            if not os.path.exists("./local_projects/" + container_name):
-                os.makedirs("./local_projects/" + container_name)
+    # If connected to Azure, create a container in the blob storage account
+    # Otherwise, create a directory in the local file system
+    if blob_service_client:
+        blob_service_client.create_container(container_name)
+    else:
+        if not os.path.exists("./local_projects/" + container_name):
+            os.makedirs("./local_projects/" + container_name)
 
     # Convert from database query response model to response model
     new_project = schemas.ExistingProject.parse_obj(
@@ -402,6 +408,8 @@ async def upload_project_video(
 
     project_name = containing_project.name
     video_name = video.filename.replace(".mp4", "")
+    
+    # Create default save location 
     local_save_path = "./local_projects/" + project_name + "/" + video_name
     storage_location = {
         "azure": False,
@@ -409,50 +417,48 @@ async def upload_project_video(
         "container": "",
     }
 
-    # For tests, don't clutter workspace by uploading videos all the time
-    if test_status != "TRUE":
-        # Upload video to the appropriate storage location (Azure or local file system)
-        try:
-            if blob_service_client:
-                # If connected to Azure, upload video to project's blob storage container
-                # under the path video_name/video.mp4
-                # The storage container is already named after the project
-                blob_client = blob_service_client.get_blob_client(
-                    container=project_name, blob=video_name + "/" + video.filename
-                )
-                blob_client.upload_blob(contents)
-
-                # Set up appropriate information for saving extracted frames in Azure
-                storage_location["azure"] = True
-                storage_location["container"] = project_name
-                storage_location["path"] = video_name + "/frames"
-            else:
-                # Otherwise, add to project directory in the local file system
-
-                # If project_name/video_name directory doesn't exist, create it
-                if not os.path.exists(local_save_path):
-                    os.mkdir(local_save_path)
-
-                # Save the video file
-                video_save_path = local_save_path + video.filename
-                if not os.path.exists(video_save_path):
-                    with open(video_save_path, "wb") as f:
-                        f.write(contents)
-
-                # If project_name/video_name/frames directory doesn't exist, create it
-                if not os.path.exists(storage_location["path"]):
-                    os.mkdir(storage_location["path"])
-
-        except Exception as e:
-            return JSONResponse(
-                status_code=500,
-                content={
-                    "message": "Failed to save video "
-                    + video.filename
-                    + " with error "
-                    + str(e)
-                },
+    # Upload video to the appropriate storage location (Azure or local file system)
+    try:
+        if blob_service_client:
+            # If connected to Azure, upload video to project's blob storage container
+            # under the path video_name/video.mp4
+            # The storage container is already named after the project
+            blob_client = blob_service_client.get_blob_client(
+                container=project_name, blob=video_name + "/" + video.filename
             )
+            blob_client.upload_blob(contents)
+
+            # Set up appropriate information for saving extracted frames in Azure
+            storage_location["azure"] = True
+            storage_location["container"] = project_name
+            storage_location["path"] = video_name + "/frames"
+        else:
+            # Otherwise, add to project directory in the local file system
+
+            # If project_name/video_name directory doesn't exist, create it
+            # if not os.path.exists(local_save_path):
+            #     os.mkdir(local_save_path)
+
+            # Save the video file
+            video_save_path = local_save_path + video.filename
+            if not os.path.exists(video_save_path):
+                with open(video_save_path, "wb") as f:
+                    f.write(contents)
+
+            # If project_name/video_name/frames directory doesn't exist, create it
+            # if not os.path.exists(storage_location["path"]):
+            #     os.mkdir(storage_location["path"])
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "message": "Failed to save video "
+                + video.filename
+                + " with error "
+                + str(e)
+            },
+        )
 
     try:
         # Insert new video into database
@@ -483,6 +489,8 @@ async def upload_project_video(
 
     # Close the video file
     video.file.close()
+
+    print("Just inserted and sent to background task:", video_insert_response.done_preprocessing)
 
     return JSONResponse(
         status_code=200,
@@ -540,28 +548,44 @@ def delete_video(video_id: str):
 
 
 @app.get("/videos/{video_id}/frames")
-def get_video_frames(video_id: str):
+def get_video_frames(video_id: str, db: Session = Depends(get_db)):
     # TODO: use video_id to fetch frames belonging to
     # this video from the database
 
-    return {
-        "frames": [
+    # Validate that video_id is a valid UUID
+    try:
+        uuid.UUID(video_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Video ID " + video_id + " is not a valid UUID"},
+        )
+
+    rows_returned = crud.get_frames_by_video_id(db, video_id)
+
+    if rows_returned == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Video with ID " + video_id + " did not return any frames"},
+        )
+
+    frames = []
+    for frame in rows_returned:
+        # Convert from database query response model to response model
+        parsed_frame = schemas.Frame.parse_obj(
             {
-                "id": "uuid-f1",
-                "project_id": "uuid-p1",
-                "video_id": "uuid-v1",
-                "url": "frame-url-1",
-                "human_reviewed": False,
-            },
-            {
-                "id": "uuid-f2",
-                "project_id": "uuid-p1",
-                "video_id": "uuid-v1",
-                "url": "frame-url-2",
-                "human_reviewed": True,
-            },
-        ]
-    }
+                "id": frame.id,
+                "human_reviewed": frame.human_reviewed,
+                "width": frame.width,
+                "height": frame.height,
+                "project_id": frame.project_id,
+                "video_id": frame.video_id,
+                "frame_url": frame.frame_url
+            }
+        )
+        frames.append(parsed_frame)
+
+    return {"video_id": video_id, "frames": frames}
 
 
 # count = query parameter for specifying how many frames to get
