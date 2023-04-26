@@ -112,6 +112,9 @@ def test_upload_one_video():
     assert video_id
     assert uuid.UUID(video_id)
 
+    # Provide a little time for preprocessing the video
+    time.sleep(10)
+
     # Fetching the just-uploaded video should return additional information
     video_response = client.get(f"/videos/{video_id}")
     assert video_response.status_code == 200
@@ -120,8 +123,6 @@ def test_upload_one_video():
     assert data["project_id"] == project_id
     assert data["name"] == test_video_name
     assert data["percent_labeled"] == 0.0
-
-    # Preprocessing locally doesn't take long, these should be set
     assert data["number_of_frames"] == 64  
     assert data["done_preprocessing"] == True
 
