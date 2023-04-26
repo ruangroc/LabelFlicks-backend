@@ -76,7 +76,7 @@ class VideoResponse(VideoBase):
 
 # Base class for attributes shared between creating and reading
 class FrameBase(BaseModel):
-    human_reviwed: bool = False
+    human_reviewed: bool = False
     width: int
     height: int
     project_id: UUID
@@ -84,8 +84,7 @@ class FrameBase(BaseModel):
     frame_url: str
 
 # When uploading a frame, we should know what project it belongs
-# to, what video it came from, and frame_url can simply be some
-# incrementing int
+# to, what video it came from, and where it's stored
 class FrameCreate(FrameBase):
     pass
 

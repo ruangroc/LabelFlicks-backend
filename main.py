@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 # Azure related imports
 import os
 from dotenv import load_dotenv
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+from azure.storage.blob import BlobServiceClient
 
 # Computer vision related imports
 import numpy as np
@@ -86,7 +86,7 @@ def calculate_percent_frames_reviewed(object):
 # and using a pretrained object detection model to generate
 # initial bounding boxes and labels. This will be run in
 # a FastAPI background task.
-def preprocess_video(video_bytes, storage_location, video_id, db: Session):
+def preprocess_video(video_bytes, storage_location, video_id, project_id, db: Session):
     # Video is sent as bytes but OpenCV's VideoCapture only reads
     # videos from files, so using a temp file here
     with tempfile.NamedTemporaryFile() as temp:
@@ -97,6 +97,11 @@ def preprocess_video(video_bytes, storage_location, video_id, db: Session):
     num_frames = vidcap.get(cv2.CAP_PROP_FRAME_COUNT)
     fps = vidcap.get(cv2.CAP_PROP_FPS)
 
+    # Figure out frame width and height (returned as floats but we'll round)
+    width = round(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = round(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    uploaded_frames = []
     index = 0
     for frame in np.arange(0, num_frames, fps):
         vidcap.set(cv2.CAP_PROP_POS_FRAMES, frame)
@@ -115,16 +120,45 @@ def preprocess_video(video_bytes, storage_location, video_id, db: Session):
                 if is_success:
                     image_bytes = BytesIO(buffer)
                     blob_client.upload_blob(image_bytes)
+
+                    new_frame = schemas.FrameCreate.parse_obj(
+                        {
+                            "width": width,
+                            "height": height,
+                            "project_id": project_id,
+                            "video_id": video_id,
+                            "frame_url": storage_location["path"]
+                            + "/"
+                            + str(index)
+                            + ".jpg",
+                        }
+                    )
+                    uploaded_frames.append(new_frame)
             else:
-                cv2.imwrite(
+                is_success = cv2.imwrite(
                     os.path.join(storage_location["path"], str(index) + ".jpg"), image
                 )
+                if is_success:
+                    new_frame = schemas.FrameCreate.parse_obj(
+                        {
+                            "width": width,
+                            "height": height,
+                            "project_id": project_id,
+                            "video_id": video_id,
+                            "frame_url": os.path.join(
+                                storage_location["path"], str(index) + ".jpg"
+                            ),
+                        }
+                    )
+                    uploaded_frames.append(new_frame)
             index += 1
 
-            # TODO: insert each frame into the database
-            
-            # TODO: apply pretrained object detection model to each frame and
-            # save bounding box info per frame
+            # TODO: apply pretrained object detection model to each frame (generate bounding boxes)
+
+    # Insert all frames into the database
+    crud.insert_frames(db, uploaded_frames)
+
+    # TODO: insert all bounding box info into the database
 
     # Update done_processing field for this video
     crud.set_video_preprocessing_status(db, video_id, True)
@@ -439,7 +473,12 @@ async def upload_project_video(
 
     # Preprocess the video as a background task
     background_tasks.add_task(
-        preprocess_video, contents, storage_location, video_insert_response.id, db
+        preprocess_video,
+        contents,
+        storage_location,
+        video_insert_response.id,
+        project_id,
+        db,
     )
 
     # Close the video file
