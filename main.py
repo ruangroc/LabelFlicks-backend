@@ -155,20 +155,14 @@ def preprocess_video(video_bytes, storage_location, video_id, project_id, db: Se
 
             # TODO: apply pretrained object detection model to each frame (generate bounding boxes)
 
-    print("Extracted", len(uploaded_frames), "frames to save")
-    print(type(uploaded_frames))
-
     # Insert all frames into the database
     crud.insert_frames(db, uploaded_frames)
-
-    print("Inserted frames into database")
 
     # TODO: insert all bounding box info into the database
 
     # Update done_processing field for this video
     crud.set_video_preprocessing_status(db, video_id, True)
 
-    print("Set done_preprocessing to True")
 
 
 ###############################################################
