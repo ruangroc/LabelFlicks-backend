@@ -87,6 +87,9 @@ def calculate_percent_frames_reviewed(object):
 # initial bounding boxes and labels. This will be run in
 # a FastAPI background task.
 def preprocess_video(video_bytes, storage_location, video_id, project_id, db: Session):
+    # Signify that preprocessing has begun
+    crud.set_video_preprocessing_status(db, video_id, "in_progress")
+
     # Video is sent as bytes but OpenCV's VideoCapture only reads
     # videos from files, so using a temp file here
     with tempfile.NamedTemporaryFile() as temp:
@@ -134,6 +137,10 @@ def preprocess_video(video_bytes, storage_location, video_id, project_id, db: Se
                         }
                     )
                     uploaded_frames.append(new_frame)
+                else:
+                    # Signify that preprocessing failed for this video so caller can restart
+                    crud.set_video_preprocessing_status(db, video_id, "failed")
+                    return
             else:
                 is_success = cv2.imwrite(
                     os.path.join(storage_location["path"], str(index) + ".jpg"), image
@@ -151,9 +158,19 @@ def preprocess_video(video_bytes, storage_location, video_id, project_id, db: Se
                         }
                     )
                     uploaded_frames.append(new_frame)
+                else:
+                    # Signify that preprocessing failed for this video so caller can restart
+                    crud.set_video_preprocessing_status(db, video_id, "failed")
+                    return
+
             index += 1
 
             # TODO: apply pretrained object detection model to each frame (generate bounding boxes)
+        
+        else:
+            # Signify that preprocessing failed for this video so caller can restart
+            crud.set_video_preprocessing_status(db, video_id, "failed")
+            return
 
     # Insert all frames into the database
     crud.insert_frames(db, uploaded_frames)
@@ -161,7 +178,7 @@ def preprocess_video(video_bytes, storage_location, video_id, project_id, db: Se
     # TODO: insert all bounding box info into the database
 
     # Update done_processing field for this video
-    crud.set_video_preprocessing_status(db, video_id, True)
+    crud.set_video_preprocessing_status(db, video_id, "success")
 
 
 
@@ -332,7 +349,7 @@ def get_project_videos(project_id: str, db: Session = Depends(get_db)):
                 "date_uploaded": row.date_uploaded,
                 "percent_labeled": calculate_percent_frames_reviewed(row),
                 "number_of_frames": len(row.frames),
-                "done_preprocessing": row.done_preprocessing,
+                "preprocessing_status": row.preprocessing_status,
             }
         )
         videos.append(video)
@@ -370,7 +387,7 @@ async def upload_project_video(
         return JSONResponse(
             status_code=400,
             content={
-                "message": "Video " + video.filename + " has already been uploaded"
+                "message": "Video " + video.filename + " has already been uploaded to project with ID " + str(duplicate_video.project_id)
             },
         )
 
@@ -429,19 +446,15 @@ async def upload_project_video(
         else:
             # Otherwise, add to project directory in the local file system
 
-            # If project_name/video_name directory doesn't exist, create it
-            if not os.path.exists(local_save_path):
-                os.mkdir(local_save_path)
+            # If project_name/video_name/frames directories don't exist, create them
+            if not os.path.exists(storage_location["path"]):
+                os.makedirs(storage_location["path"])
 
             # Save the video file
             video_save_path = local_save_path + video.filename
             if not os.path.exists(video_save_path):
                 with open(video_save_path, "wb") as f:
                     f.write(contents)
-
-            # If project_name/video_name/frames directory doesn't exist, create it
-            if not os.path.exists(storage_location["path"]):
-                os.mkdir(storage_location["path"])
 
     except Exception as e:
         return JSONResponse(
@@ -484,10 +497,8 @@ async def upload_project_video(
     # Close the video file
     video.file.close()
 
-    print("Just inserted and sent to background task:", video_insert_response.done_preprocessing)
-
     return JSONResponse(
-        status_code=200,
+        status_code=202,
         content={"id": project_id, "video_id": str(video_insert_response.id)},
     )
 
@@ -525,11 +536,92 @@ def get_video(video_id: str, db: Session = Depends(get_db)):
             "date_uploaded": res.date_uploaded,
             "percent_labeled": calculate_percent_frames_reviewed(res),
             "number_of_frames": len(res.frames),
-            "done_preprocessing": res.done_preprocessing,
+            "preprocessing_status": res.preprocessing_status,
         }
     )
 
     return video
+
+
+@app.get("/videos/{video_id}/preprocess")
+def get_video(video_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    # Validate that video_id is a valid UUID
+    try:
+        uuid.UUID(video_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Video ID " + video_id + " is not a valid UUID"},
+        )
+
+    video = crud.get_video_by_id(db, video_id)
+
+    if video == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Video with ID " + video_id + " not found"},
+        )
+    
+    if video.preprocessing_status == "success":
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Video with ID " + video_id + " has already been successfully preprocessed"}
+        )
+    
+    project = crud.get_project_by_id(db, video.project_id)
+    video_name = video.name.replace(".mp4", "")
+    local_save_path = "./local_projects/" + project.name + "/" + video_name
+    storage_location = {
+        "azure": False,
+        "path": local_save_path + "/frames",
+        "container": "",
+    }
+
+    # Get the video's content as bytes (either from local storage or Azure)
+    try:
+        if blob_service_client:
+            # If connected to Azure, download the video as a byte stream
+            blob_client = blob_service_client.get_blob_client(
+                container=project.name, blob=video_name + "/" + video.name
+            )
+            contents = BytesIO()
+            blob_client.download_blob().readinto(contents)
+
+            # Set up appropriate information for saving extracted frames in Azure
+            storage_location["azure"] = True
+            storage_location["container"] = project.name
+            storage_location["path"] = video_name + "/frames"
+        else:
+            # Otherwise, read as bytes from the local video file
+            video_save_path = local_save_path + video.name
+            with open(video_save_path, "rb") as f:
+                contents = f.read()
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "message": "While restarting preprocessing, failed to fetch video "
+                + video.name
+                + " with error "
+                + str(e)
+            },
+        )
+
+    # Preprocess the video as a background task
+    background_tasks.add_task(
+        preprocess_video,
+        contents,
+        storage_location,
+        video_id,
+        video.project_id,
+        db,
+    )
+
+    return JSONResponse(
+        status_code=202,
+        content={"id": str(video.project_id), "video_id": str(video.id)},
+    )
 
 
 @app.delete("/videos/{video_id}")

@@ -105,7 +105,7 @@ def test_upload_one_video():
         f"/projects/{project_id}/videos",
         files={"video": open("./test_videos/" + test_video_name, "rb")}
     )
-    assert upload_response.status_code == 200
+    assert upload_response.status_code == 202
     data = upload_response.json()
     assert data["id"] == project_id
     video_id = data["video_id"]
@@ -124,7 +124,7 @@ def test_upload_one_video():
     assert data["name"] == test_video_name
     assert data["percent_labeled"] == 0.0
     assert data["number_of_frames"] == 64  
-    assert data["done_preprocessing"] == True
+    assert data["preprocessing_status"] == "success"
 
     # To double check that frames were inserted, call this
     # additional endpoint as well
@@ -151,7 +151,7 @@ def test_upload_one_video():
     )
     assert upload_response.status_code == 400
     data = upload_response.json()
-    assert data["message"] == "Video " + test_video_name + " has already been uploaded"
+    assert data["message"] == "Video " + test_video_name + " has already been uploaded to project with ID " + project_id
 
     # Fetching all video IDs related to this project should return just this one video ID
     fetch_response = client.get(f"/projects/{project_id}/videos")

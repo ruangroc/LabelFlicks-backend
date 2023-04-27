@@ -55,7 +55,7 @@ class Video(VideoBase):
     name: str
     video_url: str
     date_uploaded: date
-    done_preprocessing: bool
+    preprocessing_status: str
 
     class Config:
         orm_mode = True
@@ -68,7 +68,7 @@ class VideoResponse(VideoBase):
     date_uploaded: date
     percent_labeled: float
     number_of_frames: int
-    done_preprocessing: bool
+    preprocessing_status: str
 
 ###############################################################
 # Frame schemas

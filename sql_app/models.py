@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Uuid, Date, text, UUID
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Uuid, Date, text
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -27,7 +27,7 @@ class Video(Base):
     video_url = Column('video_url', String)
     date_uploaded = Column('date_uploaded', Date)
     project_id = Column('project_id', Uuid, ForeignKey("projects.id"))
-    done_preprocessing = Column('done_preprocessing', Boolean, default=False)
+    preprocessing_status = Column('preprocessing_status', String, default="not_started")
 
     project = relationship("Project", back_populates="videos")
     frames = relationship("Frame", back_populates="video")
