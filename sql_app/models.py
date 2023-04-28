@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Uuid, Date, text, UUID
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Uuid, Date, text
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -27,6 +27,7 @@ class Video(Base):
     video_url = Column('video_url', String)
     date_uploaded = Column('date_uploaded', Date)
     project_id = Column('project_id', Uuid, ForeignKey("projects.id"))
+    preprocessing_status = Column('preprocessing_status', String, default="not_started")
 
     project = relationship("Project", back_populates="videos")
     frames = relationship("Frame", back_populates="video")
@@ -36,7 +37,7 @@ class Frame(Base):
     __tablename__ = "frames"
 
     id = Column('id', Uuid, primary_key=True, index=True, unique=True, server_default=text("gen_random_uuid()"))
-    human_reviewed = Column('human_reviewed', Boolean)
+    human_reviewed = Column('human_reviewed', Boolean, default=False)
     width = Column('width', Integer)
     height = Column('height', Integer)
     frame_url = Column('frame_url', String)

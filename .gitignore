@@ -1,6 +1,7 @@
 # my own
 *.pem
 local_projects/
+.vscode
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

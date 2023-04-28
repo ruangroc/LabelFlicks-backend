@@ -3,6 +3,7 @@ from sql_app.database import SessionLocal, engine
 from sql_app import models
 from main import app, get_db
 import uuid
+import time
 
 # Clear test database before creating new tables
 models.Base.metadata.drop_all(bind=engine)
@@ -104,12 +105,35 @@ def test_upload_one_video():
         f"/projects/{project_id}/videos",
         files={"video": open("./test_videos/" + test_video_name, "rb")}
     )
-    assert upload_response.status_code == 200
+    assert upload_response.status_code == 202
     data = upload_response.json()
     assert data["id"] == project_id
     video_id = data["video_id"]
     assert video_id
     assert uuid.UUID(video_id)
+
+    # Provide a little time for preprocessing the video
+    time.sleep(10)
+
+    # Fetching the just-uploaded video should return additional information
+    video_response = client.get(f"/videos/{video_id}")
+    assert video_response.status_code == 200
+    data = video_response.json()
+    assert data["id"] == video_id
+    assert data["project_id"] == project_id
+    assert data["name"] == test_video_name
+    assert data["percent_labeled"] == 0.0
+    assert data["number_of_frames"] == 64  
+    assert data["preprocessing_status"] == "success"
+
+    # To double check that frames were inserted, call this
+    # additional endpoint as well
+    video_response = client.get(f"/videos/{video_id}/frames")
+    assert video_response.status_code == 200
+    data = video_response.json()
+    assert data["video_id"] == video_id
+    assert data["frames"]
+    assert len(data["frames"]) == 64
 
     # Uploading with invalid project UUID should fail
     response = client.post(
@@ -127,7 +151,7 @@ def test_upload_one_video():
     )
     assert upload_response.status_code == 400
     data = upload_response.json()
-    assert data["message"] == "Video " + test_video_name + " has already been uploaded"
+    assert data["message"] == "Video " + test_video_name + " has already been uploaded to project with ID " + project_id
 
     # Fetching all video IDs related to this project should return just this one video ID
     fetch_response = client.get(f"/projects/{project_id}/videos")
@@ -136,18 +160,6 @@ def test_upload_one_video():
     assert data["project_id"] == project_id
     assert len(data["videos"]) == 1
     assert data["videos"][0]["id"] == video_id
-
-    # Fetching the just-uploaded video should return additional information
-    video_response = client.get(f"/videos/{video_id}")
-    assert video_response.status_code == 200
-    data = video_response.json()
-    assert data["id"] == video_id
-    assert data["project_id"] == project_id
-    assert data["name"] == test_video_name
-    assert data["percent_labeled"] == 0.0
-
-    # TODO: change after video preprocessing implemented
-    assert data["number_of_frames"] == 0  
 
 
 def test_upload_video_to_nonexistent_project():
