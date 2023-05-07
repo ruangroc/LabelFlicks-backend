@@ -90,6 +90,7 @@ def set_video_preprocessing_status(db: Session, video_id: Uuid, status: String):
 # frames table
 ###############################################################
 
+
 def insert_frames(db: Session, frames: List[schemas.FrameCreate]):
     db_frames = [
         models.Frame(
@@ -117,6 +118,41 @@ def get_frames_by_project_id(db: Session, project_id: Uuid):
 # bounding_boxes table
 ###############################################################
 
+
+def insert_boxes(db: Session, boxes: List[schemas.BoundingBoxCreate]):
+    db_boxes = [
+        models.BoundingBox(
+            x_top_left=box.x_top_left,
+            y_top_left=box.y_top_left,
+            x_bottom_right=box.x_bottom_right,
+            y_bottom_right=box.y_bottom_right,
+            width=box.width,
+            height=box.height,
+            frame_id=box.frame_id,
+            label_id=box.label_id,
+        )
+        for box in db_boxes
+    ]
+    db.add_all(db_boxes)
+    db.commit()
+
+
 ###############################################################
 # labels table
 ###############################################################
+
+
+def insert_labels(db: Session, labels: List[schemas.LabelCreate]):
+    db_labels = [
+        models.Label(name=label.name, project_id=label.project_id) for label in labels
+    ]
+    db.add_all(db_labels)
+    db.commit()
+
+
+def get_label_by_name_and_project(db: Session, name: str, project_id: Uuid):
+    return (
+        db.query(models.Label)
+        .filter(models.Label.name == name, models.Label.project_id == project_id)
+        .first()
+    )
