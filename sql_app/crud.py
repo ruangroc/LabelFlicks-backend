@@ -156,3 +156,7 @@ def get_label_by_name_and_project(db: Session, name: str, project_id: Uuid):
         .filter(models.Label.name == name, models.Label.project_id == project_id)
         .first()
     )
+
+
+def get_labels_by_project(db: Session, project_id: Uuid):
+    return db.query(models.Label).filter(models.Label.project_id == project_id).first()
