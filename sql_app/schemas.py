@@ -133,11 +133,11 @@ class LabelBase(BaseModel):
     project_id: UUID
 
 # When creating a label, we won't know its uuid
-class ProjectCreate(ProjectBase):
+class LabelCreate(LabelBase):
     pass
 
 # When fetching a label, we should know everything
-class Project(ProjectBase):
+class Label(LabelBase):
     id: UUID
 
     class Config:
