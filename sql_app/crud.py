@@ -116,7 +116,7 @@ def insert_frames(db: Session, frames: List[schemas.FrameCreate]):
         )
         for frame in frames
     ]
-    db.add(db_frames)
+    db.add_all(db_frames)
     db.commit()
 
 
