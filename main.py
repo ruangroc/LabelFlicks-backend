@@ -219,7 +219,7 @@ def preprocess_video(
                     return
             else:
                 is_success = cv2.imwrite(
-                    os.path.join(storage_location["path"], str(index) + ".jpg"), image
+                    storage_location["path"] + "/" + str(index) + ".jpg", image
                 )
                 if is_success:
                     new_frame = schemas.FrameCreate.parse_obj(
@@ -228,9 +228,7 @@ def preprocess_video(
                             "height": height,
                             "project_id": project_id,
                             "video_id": video_id,
-                            "frame_url": os.path.join(
-                                storage_location["path"], str(index) + ".jpg"
-                            ),
+                            "frame_url": storage_location["path"] + "/" + str(index) + ".jpg",
                         }
                     )
                     inserted_frame = crud.insert_one_frame(db, new_frame)
@@ -517,7 +515,7 @@ async def upload_project_video(
     video_name = video.filename.replace(".mp4", "")
 
     # Create default save location
-    local_save_path = "./local_projects/" + project_name + "/" + video_name
+    local_save_path = os.getcwd() + "/local_projects/" + project_name + "/" + video_name
     storage_location = {
         "azure": False,
         "path": local_save_path + "/frames",
@@ -672,7 +670,7 @@ def restart_video_preprocess(
 
     project = crud.get_project_by_id(db, video.project_id)
     video_name = video.name.replace(".mp4", "")
-    local_save_path = "./local_projects/" + project.name + "/" + video_name
+    local_save_path = os.getcwd() + "/local_projects/" + project.name + "/" + video_name
     storage_location = {
         "azure": False,
         "path": local_save_path + "/frames",
