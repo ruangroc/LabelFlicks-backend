@@ -178,73 +178,82 @@ def preprocess_video(
     width = round(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = round(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    # uploaded_frames = []
     index = 0
     for frame in np.arange(0, num_frames, fps):
         vidcap.set(cv2.CAP_PROP_POS_FRAMES, frame)
         hasFrames, image = vidcap.read()
-        if hasFrames:
-            # Save frame as an image in desired storage path
-            if storage_location["azure"]:
-                # First connect to storage container using the desired destination path
-                blob_client = blob_service_client.get_blob_client(
-                    container=storage_location["container"],
-                    blob=storage_location["path"] + "/" + str(index) + ".jpg",
-                )
 
-                # Convert from OpenCV's output array into image bytes before uploading
-                is_success, buffer = cv2.imencode(".jpg", image)
-                if is_success:
-                    image_bytes = BytesIO(buffer)
-                    blob_client.upload_blob(image_bytes)
-
-                    new_frame = schemas.FrameCreate.parse_obj(
-                        {
-                            "width": width,
-                            "height": height,
-                            "project_id": project_id,
-                            "video_id": video_id,
-                            "frame_url": storage_location["path"]
-                            + "/"
-                            + str(index)
-                            + ".jpg",
-                        }
-                    )
-                    inserted_frame = crud.insert_one_frame(db, new_frame)
-                    if inserted_frame:
-                        predict_bounding_boxes(image, inserted_frame.id, project_id, db)
-                else:
-                    # Signify that preprocessing failed for this video so caller can restart
-                    crud.set_video_preprocessing_status(db, video_id, "failed")
-                    return
-            else:
-                is_success = cv2.imwrite(
-                    storage_location["path"] + "/" + str(index) + ".jpg", image
-                )
-                if is_success:
-                    new_frame = schemas.FrameCreate.parse_obj(
-                        {
-                            "width": width,
-                            "height": height,
-                            "project_id": project_id,
-                            "video_id": video_id,
-                            "frame_url": storage_location["path"] + "/" + str(index) + ".jpg",
-                        }
-                    )
-                    inserted_frame = crud.insert_one_frame(db, new_frame)
-                    if inserted_frame:
-                        predict_bounding_boxes(image, inserted_frame.id, project_id, db)
-                else:
-                    # Signify that preprocessing failed for this video so caller can restart
-                    crud.set_video_preprocessing_status(db, video_id, "failed")
-                    return
-
-            index += 1
-
-        else:
-            # Signify that preprocessing failed for this video so caller can restart
+        if not hasFrames:
+            # If frames could not be extracted, signify that
+            # preprocessing failed for this video so caller can restart
             crud.set_video_preprocessing_status(db, video_id, "failed")
             return
+
+        # Otherwise continue and save frame as image in desired storage path
+        # and note whether frame insertion was successful
+        inserted_frame = False
+        if storage_location["azure"]:
+            # First connect to storage container using the desired destination path
+            blob_client = blob_service_client.get_blob_client(
+                container=storage_location["container"],
+                blob=storage_location["path"] + "/" + str(index) + ".jpg",
+            )
+
+            # Convert from OpenCV's output array into image bytes before uploading
+            is_success, buffer = cv2.imencode(".jpg", image)
+
+            if not is_success:
+                # Signify that preprocessing failed for this video so caller can restart
+                crud.set_video_preprocessing_status(db, video_id, "failed")
+                return
+
+            image_bytes = BytesIO(buffer)
+            blob_client.upload_blob(image_bytes)
+
+            new_frame = schemas.FrameCreate.parse_obj(
+                {
+                    "width": width,
+                    "height": height,
+                    "project_id": project_id,
+                    "video_id": video_id,
+                    "frame_url": storage_location["path"]
+                    + "/"
+                    + str(index)
+                    + ".jpg",
+                }
+            )
+            inserted_frame = crud.insert_one_frame(db, new_frame)
+            # if inserted_frame:
+            #     predict_bounding_boxes(image, inserted_frame.id, project_id, db)
+                
+        else:
+            is_success = cv2.imwrite(
+                storage_location["path"] + "/" + str(index) + ".jpg", image
+            )
+
+            if not is_success:
+                # Signify that preprocessing failed for this video so caller can restart
+                crud.set_video_preprocessing_status(db, video_id, "failed")
+                return
+            
+            new_frame = schemas.FrameCreate.parse_obj(
+                {
+                    "width": width,
+                    "height": height,
+                    "project_id": project_id,
+                    "video_id": video_id,
+                    "frame_url": storage_location["path"] + "/" + str(index) + ".jpg",
+                }
+            )
+            inserted_frame = crud.insert_one_frame(db, new_frame)
+            # if inserted_frame:
+            #     predict_bounding_boxes(image, inserted_frame.id, project_id, db)
+
+
+        if inserted_frame:
+            predict_bounding_boxes(image, inserted_frame.id, project_id, db)
+
+        index += 1
 
     # Update done_processing field for this video
     crud.set_video_preprocessing_status(db, video_id, "success")
