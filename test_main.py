@@ -113,7 +113,7 @@ def test_upload_one_video():
     assert uuid.UUID(video_id)
 
     # Provide a little time for preprocessing the video
-    time.sleep(10)
+    time.sleep(40)
 
     # Fetching the just-uploaded video should return additional information
     video_response = client.get(f"/videos/{video_id}")
@@ -134,6 +134,31 @@ def test_upload_one_video():
     assert data["video_id"] == video_id
     assert data["frames"]
     assert len(data["frames"]) == 64
+    one_frame_id = data["frames"][0]["id"]
+    another_frame_id = data["frames"][10]["id"]
+
+    # To check that preprocessing worked, check that labels were 
+    # created and bounding boxes inserted
+    labels_response = client.get(f"/projects/{project_id}/labels")
+    assert labels_response.status_code == 200
+    data = labels_response.json()
+    assert data["project_id"] == project_id
+    assert len(data["labels"]) == 4
+    label_names = [label["name"] for label in data["labels"]]
+    assert "person" in label_names
+    assert "car" in label_names
+
+    boxes_response = client.get(f"/frames/{one_frame_id}/inferences")
+    assert boxes_response.status_code == 200
+    data = boxes_response.json()
+    assert data["frame_id"] == one_frame_id
+    assert len(data["bounding_boxes"]) == 0  # This frame had no detected boxes
+
+    boxes_response = client.get(f"/frames/{another_frame_id}/inferences")
+    assert boxes_response.status_code == 200
+    data = boxes_response.json()
+    assert data["frame_id"] == another_frame_id
+    assert len(data["bounding_boxes"]) == 5  # This frame detected 4 people and 1 car
 
     # Uploading with invalid project UUID should fail
     response = client.post(

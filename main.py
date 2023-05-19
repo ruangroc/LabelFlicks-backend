@@ -19,7 +19,10 @@ import numpy as np
 import cv2
 from io import BytesIO
 import tempfile
+from ultralytics import YOLO
 
+# Load pre-trained YOLO object detection model
+yolo_model = YOLO("yolov8n.pt")
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -82,11 +85,82 @@ def calculate_percent_frames_reviewed(object):
     return round(100 * (reviewed / total), 2)
 
 
+def predict_bounding_boxes(
+    frame_image, frame_id: uuid.UUID, project_id: uuid.UUID, db: Session
+):
+    # Apply pretrained object detection model to each frame to generate bounding boxes
+    yolo_results = yolo_model(frame_image)
+    yolo_class_ids_to_names = yolo_results[0].names
+
+    # Insert any new detected labels into the database
+    labels_to_insert = []
+    label_names = np.unique(
+        [yolo_class_ids_to_names[int(box.cls)] for box in yolo_results[0].boxes]
+    )
+    for label_name in label_names:
+        if crud.get_label_by_name_and_project(db, label_name, project_id) == None:
+            labels_to_insert.append(
+                schemas.LabelCreate.parse_obj(
+                    {"project_id": project_id, "name": str(label_name)}
+                )
+            )
+
+    if len(labels_to_insert) > 0:
+        crud.insert_labels(db, labels_to_insert)
+
+    # Update mapping for the IDs from the database's Label table
+    label_names_to_db_ids = {}
+    all_project_labels = crud.get_labels_by_project(db, project_id)
+    for label in all_project_labels:
+        label_names_to_db_ids[label.name] = label.id
+
+    # Create mapping from label name to label ids
+
+    # Put info about each box into a standard format
+    boxes = []
+    for box in yolo_results[0].boxes:
+        # print("\n box.xyxy:", box.xyxy, "\n")
+        # print("\n box.xywh:", box.xywh, "\n")
+
+        # Box information given as tensor([[float, float, float, float]])
+        x_top_left = box.xyxy[0][0]
+        y_top_left = box.xyxy[0][1]
+        x_bottom_right = box.xyxy[0][2]
+        y_bottom_right = box.xyxy[0][3]
+        width = box.xywh[0][2]
+        height = box.xywh[0][3]
+        label_name = yolo_class_ids_to_names[int(box.cls)]
+
+        db_box = schemas.BoundingBoxCreate.parse_obj(
+            {
+                "x_top_left": x_top_left,
+                "y_top_left": y_top_left,
+                "x_bottom_right": x_bottom_right,
+                "y_bottom_right": y_bottom_right,
+                "width": width,
+                "height": height,
+                "frame_id": frame_id,
+                "label_id": label_names_to_db_ids[label_name],
+            }
+        )
+        boxes.append(db_box)
+
+    # Insert all bounding boxes for this frame into the database
+    crud.insert_boxes(db, boxes)
+    return
+
+
 # Preprocessing a video involves extracting frames (1 fps)
 # and using a pretrained object detection model to generate
 # initial bounding boxes and labels. This will be run in
 # a FastAPI background task.
-def preprocess_video(video_bytes, storage_location, video_id, project_id, db: Session):
+def preprocess_video(
+    video_bytes,
+    storage_location,
+    video_id: uuid.UUID,
+    project_id: uuid.UUID,
+    db: Session,
+):
     # Signify that preprocessing has begun
     crud.set_video_preprocessing_status(db, video_id, "in_progress")
 
@@ -104,82 +178,85 @@ def preprocess_video(video_bytes, storage_location, video_id, project_id, db: Se
     width = round(vidcap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = round(vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    uploaded_frames = []
     index = 0
     for frame in np.arange(0, num_frames, fps):
         vidcap.set(cv2.CAP_PROP_POS_FRAMES, frame)
         hasFrames, image = vidcap.read()
-        if hasFrames:
-            # Save frame as an image in desired storage path
-            if storage_location["azure"]:
-                # First connect to storage container using the desired destination path
-                blob_client = blob_service_client.get_blob_client(
-                    container=storage_location["container"],
-                    blob=storage_location["path"] + "/" + str(index) + ".jpg",
-                )
 
-                # Convert from OpenCV's output array into image bytes before uploading
-                is_success, buffer = cv2.imencode(".jpg", image)
-                if is_success:
-                    image_bytes = BytesIO(buffer)
-                    blob_client.upload_blob(image_bytes)
-
-                    new_frame = schemas.FrameCreate.parse_obj(
-                        {
-                            "width": width,
-                            "height": height,
-                            "project_id": project_id,
-                            "video_id": video_id,
-                            "frame_url": storage_location["path"]
-                            + "/"
-                            + str(index)
-                            + ".jpg",
-                        }
-                    )
-                    uploaded_frames.append(new_frame)
-                else:
-                    # Signify that preprocessing failed for this video so caller can restart
-                    crud.set_video_preprocessing_status(db, video_id, "failed")
-                    return
-            else:
-                is_success = cv2.imwrite(
-                    os.path.join(storage_location["path"], str(index) + ".jpg"), image
-                )
-                if is_success:
-                    new_frame = schemas.FrameCreate.parse_obj(
-                        {
-                            "width": width,
-                            "height": height,
-                            "project_id": project_id,
-                            "video_id": video_id,
-                            "frame_url": os.path.join(
-                                storage_location["path"], str(index) + ".jpg"
-                            ),
-                        }
-                    )
-                    uploaded_frames.append(new_frame)
-                else:
-                    # Signify that preprocessing failed for this video so caller can restart
-                    crud.set_video_preprocessing_status(db, video_id, "failed")
-                    return
-
-            index += 1
-
-            # TODO: apply pretrained object detection model to each frame (generate bounding boxes)
-        
-        else:
-            # Signify that preprocessing failed for this video so caller can restart
+        if not hasFrames:
+            # If frames could not be extracted, signify that
+            # preprocessing failed for this video so caller can restart
             crud.set_video_preprocessing_status(db, video_id, "failed")
             return
 
-    # Insert all frames into the database
-    crud.insert_frames(db, uploaded_frames)
+        # Otherwise continue and save frame as image in desired storage path
+        # and note whether frame insertion was successful
+        inserted_frame = False
+        if storage_location["azure"]:
+            # First connect to storage container using the desired destination path
+            blob_client = blob_service_client.get_blob_client(
+                container=storage_location["container"],
+                blob=storage_location["path"] + "/" + str(index) + ".jpg",
+            )
 
-    # TODO: insert all bounding box info into the database
+            # Convert from OpenCV's output array into image bytes before uploading
+            is_success, buffer = cv2.imencode(".jpg", image)
+
+            if not is_success:
+                # Signify that preprocessing failed for this video so caller can restart
+                crud.set_video_preprocessing_status(db, video_id, "failed")
+                return
+
+            image_bytes = BytesIO(buffer)
+            blob_client.upload_blob(image_bytes)
+
+            new_frame = schemas.FrameCreate.parse_obj(
+                {
+                    "width": width,
+                    "height": height,
+                    "project_id": project_id,
+                    "video_id": video_id,
+                    "frame_url": storage_location["path"]
+                    + "/"
+                    + str(index)
+                    + ".jpg",
+                }
+            )
+            inserted_frame = crud.insert_one_frame(db, new_frame)
+            # if inserted_frame:
+            #     predict_bounding_boxes(image, inserted_frame.id, project_id, db)
+                
+        else:
+            is_success = cv2.imwrite(
+                storage_location["path"] + "/" + str(index) + ".jpg", image
+            )
+
+            if not is_success:
+                # Signify that preprocessing failed for this video so caller can restart
+                crud.set_video_preprocessing_status(db, video_id, "failed")
+                return
+            
+            new_frame = schemas.FrameCreate.parse_obj(
+                {
+                    "width": width,
+                    "height": height,
+                    "project_id": project_id,
+                    "video_id": video_id,
+                    "frame_url": storage_location["path"] + "/" + str(index) + ".jpg",
+                }
+            )
+            inserted_frame = crud.insert_one_frame(db, new_frame)
+            # if inserted_frame:
+            #     predict_bounding_boxes(image, inserted_frame.id, project_id, db)
+
+
+        if inserted_frame:
+            predict_bounding_boxes(image, inserted_frame.id, project_id, db)
+
+        index += 1
 
     # Update done_processing field for this video
     crud.set_video_preprocessing_status(db, video_id, "success")
-
 
 
 ###############################################################
@@ -302,11 +379,34 @@ def delete_project(project_id: str):
 
 
 @app.get("/projects/{project_id}/labels")
-def get_project_labels(project_id: str):
-    # TODO: return list of labels (class names) that are used
-    # for labeling boxes in this project
+def get_project_labels(project_id: str, db: Session = Depends(get_db)):
+    # Validate that project_id is a valid UUID
+    try:
+        uuid.UUID(project_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Project ID " + project_id + " is not a valid UUID"},
+        )
 
-    return {"id": project_id, "labels": []}
+    res = crud.get_project_by_id(db, project_id)
+
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Project with ID " + project_id + " not found"},
+        )
+
+    rows_returned = crud.get_labels_by_project(db, project_id)
+    labels = []
+    for row in rows_returned:
+        labels.append(
+            schemas.Label.parse_obj(
+                {"id": row.id, "name": row.name, "project_id": row.project_id}
+            )
+        )
+
+    return {"project_id": project_id, "labels": labels}
 
 
 @app.get("/projects/{project_id}/labeled-images")
@@ -387,7 +487,10 @@ async def upload_project_video(
         return JSONResponse(
             status_code=400,
             content={
-                "message": "Video " + video.filename + " has already been uploaded to project with ID " + str(duplicate_video.project_id)
+                "message": "Video "
+                + video.filename
+                + " has already been uploaded to project with ID "
+                + str(duplicate_video.project_id)
             },
         )
 
@@ -419,9 +522,9 @@ async def upload_project_video(
 
     project_name = containing_project.name
     video_name = video.filename.replace(".mp4", "")
-    
-    # Create default save location 
-    local_save_path = "./local_projects/" + project_name + "/" + video_name
+
+    # Create default save location
+    local_save_path = os.getcwd() + "/local_projects/" + project_name + "/" + video_name
     storage_location = {
         "azure": False,
         "path": local_save_path + "/frames",
@@ -544,7 +647,9 @@ def get_video(video_id: str, db: Session = Depends(get_db)):
 
 
 @app.get("/videos/{video_id}/preprocess")
-def get_video(video_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+def restart_video_preprocess(
+    video_id: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)
+):
     # Validate that video_id is a valid UUID
     try:
         uuid.UUID(video_id)
@@ -561,16 +666,20 @@ def get_video(video_id: str, background_tasks: BackgroundTasks, db: Session = De
             status_code=404,
             content={"message": "Video with ID " + video_id + " not found"},
         )
-    
+
     if video.preprocessing_status == "success":
         return JSONResponse(
             status_code=200,
-            content={"message": "Video with ID " + video_id + " has already been successfully preprocessed"}
+            content={
+                "message": "Video with ID "
+                + video_id
+                + " has already been successfully preprocessed"
+            },
         )
-    
+
     project = crud.get_project_by_id(db, video.project_id)
     video_name = video.name.replace(".mp4", "")
-    local_save_path = "./local_projects/" + project.name + "/" + video_name
+    local_save_path = os.getcwd() + "/local_projects/" + project.name + "/" + video_name
     storage_location = {
         "azure": False,
         "path": local_save_path + "/frames",
@@ -635,9 +744,6 @@ def delete_video(video_id: str):
 
 @app.get("/videos/{video_id}/frames")
 def get_video_frames(video_id: str, db: Session = Depends(get_db)):
-    # TODO: use video_id to fetch frames belonging to
-    # this video from the database
-
     # Validate that video_id is a valid UUID
     try:
         uuid.UUID(video_id)
@@ -646,14 +752,16 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
             status_code=400,
             content={"message": "Video ID " + video_id + " is not a valid UUID"},
         )
+    
+    res = crud.get_video_by_id(db, video_id)
 
-    rows_returned = crud.get_frames_by_video_id(db, video_id)
-
-    if rows_returned == None:
+    if res == None:
         return JSONResponse(
             status_code=404,
-            content={"message": "Video with ID " + video_id + " did not return any frames"},
+            content={"message": "Video with ID " + video_id + " not found"},
         )
+
+    rows_returned = crud.get_frames_by_video_id(db, video_id)
 
     frames = []
     for frame in rows_returned:
@@ -666,7 +774,7 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
                 "height": frame.height,
                 "project_id": frame.project_id,
                 "video_id": frame.video_id,
-                "frame_url": frame.frame_url
+                "frame_url": frame.frame_url,
             }
         )
         frames.append(parsed_frame)
@@ -724,31 +832,44 @@ def get_frame(frame_id: str):
     }
 
 
+# Get the bounding boxes for this frame
 @app.get("/frames/{frame_id}/inferences")
-def get_frame_inferences(frame_id: str):
-    # TODO: run object detection inference on this frame,
-    # insert any new bounding box or label information into
-    # the database as appropriate, return bounding box and
-    # label information for this frame (if any)
+def get_frame_inferences(frame_id: str, db: Session = Depends(get_db)):
+    try:
+        uuid.UUID(frame_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Frame ID " + frame_id + " is not a valid UUID"},
+        )
+    
+    res = crud.get_frame_by_id(db, frame_id)
 
-    return {
-        "inferences": [
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Frame with ID " + frame_id + " not found"},
+        )
+    
+    rows_returned = crud.get_boxes_by_frame_id(db, frame_id)
+
+    boxes = []
+    for row in rows_returned:
+        box = schemas.BoundingBoxCreate.parse_obj(
             {
-                "id": "uuid-b1",
-                "frame_id": "uuid-f1",
-                "label": "label-name",
-                "url": "frame-url-1",
-                "human_reviewed": False,
-            },
-            {
-                "id": "uuid-f2",
-                "project_id": "uuid-p1",
-                "video_id": "uuid-v1",
-                "url": "frame-url-2",
-                "human_reviewed": False,
-            },
-        ]
-    }
+                "x_top_left": row.x_top_left,
+                "y_top_left": row.y_top_left,
+                "x_bottom_right": row.x_bottom_right,
+                "y_bottom_right": row.y_bottom_right,
+                "width": row.width,
+                "height": row.height,
+                "frame_id": frame_id,
+                "label_id": row.label_id,
+            }
+        )
+        boxes.append(box)
+
+    return {"frame_id": frame_id, "bounding_boxes": boxes}
 
 
 # format = query parameter for bounding box data format
