@@ -70,31 +70,6 @@ class VideoResponse(VideoBase):
     number_of_frames: int
     preprocessing_status: str
 
-###############################################################
-# Frame schemas
-###############################################################
-
-# Base class for attributes shared between creating and reading
-class FrameBase(BaseModel):
-    human_reviewed: bool = False
-    width: int
-    height: int
-    project_id: UUID
-    video_id: UUID
-    frame_url: str
-
-# When uploading a frame, we should know what project it belongs
-# to, what video it came from, and where it's stored
-class FrameCreate(FrameBase):
-    pass
-
-# When fetching a frame, we should know everything
-class Frame(FrameBase):
-    id: UUID
-
-    class Config:
-        orm_mode = True
-    
 
 ###############################################################
 # BoundingBox schemas
@@ -123,6 +98,7 @@ class BoundingBox(BoundingBoxBase):
     class Config:
         orm_mode = True
 
+
 ###############################################################
 # Label schemas
 ###############################################################
@@ -131,6 +107,7 @@ class BoundingBox(BoundingBoxBase):
 class LabelBase(BaseModel):
     name: str
     project_id: UUID
+    frame_id: UUID
 
 # When creating a label, we won't know its uuid
 class LabelCreate(LabelBase):
@@ -139,6 +116,33 @@ class LabelCreate(LabelBase):
 # When fetching a label, we should know everything
 class Label(LabelBase):
     id: UUID
+
+    class Config:
+        orm_mode = True
+
+
+###############################################################
+# Frame schemas
+###############################################################
+
+# Base class for attributes shared between creating and reading
+class FrameBase(BaseModel):
+    human_reviewed: bool = False
+    width: int
+    height: int
+    project_id: UUID
+    video_id: UUID
+    frame_url: str
+
+# When uploading a frame, we should know what project it belongs
+# to, what video it came from, and where it's stored
+class FrameCreate(FrameBase):
+    pass
+
+# When fetching a frame, we should know everything
+class Frame(FrameBase):
+    id: UUID
+    labels: List[Label]
 
     class Config:
         orm_mode = True

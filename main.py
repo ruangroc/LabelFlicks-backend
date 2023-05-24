@@ -101,7 +101,7 @@ def predict_bounding_boxes(
         if crud.get_label_by_name_and_project(db, label_name, project_id) == None:
             labels_to_insert.append(
                 schemas.LabelCreate.parse_obj(
-                    {"project_id": project_id, "name": str(label_name)}
+                    {"project_id": project_id, "name": str(label_name), "frame_id": frame_id}
                 )
             )
 
@@ -402,20 +402,11 @@ def get_project_labels(project_id: str, db: Session = Depends(get_db)):
     for row in rows_returned:
         labels.append(
             schemas.Label.parse_obj(
-                {"id": row.id, "name": row.name, "project_id": row.project_id}
+                {"id": row.id, "name": row.name, "project_id": row.project_id, "frame_id": row.frame_id}
             )
         )
 
     return {"project_id": project_id, "labels": labels}
-
-
-@app.get("/projects/{project_id}/labeled-images")
-def get_project_labeled_images(project_id: str):
-    # TODO: use project_id to retrieve all annotated images
-    # contains (bounding boxes and class labels) for all
-    # frames from this project
-
-    return {"id": project_id, "labeled-images": []}
 
 
 @app.get("/projects/{project_id}/videos")
@@ -775,6 +766,7 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
                 "project_id": frame.project_id,
                 "video_id": frame.video_id,
                 "frame_url": frame.frame_url,
+                "labels": frame.labels
             }
         )
         frames.append(parsed_frame)
@@ -782,54 +774,9 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
     return {"video_id": video_id, "frames": frames}
 
 
-# count = query parameter for specifying how many frames to get
-@app.get("/videos/{video_id}/random-frames")
-def get_random_frames(video_id: str, count: int = 10):
-    # TODO: use video_id to fetch a random set of frames not yet
-    # human-reviewed belonging to this video from the database
-
-    # TODO: use query parameter to specify how many to grab
-    # default can be 10 frames
-
-    return {
-        "frames": [
-            {
-                "id": "uuid-f1",
-                "project_id": "uuid-p1",
-                "video_id": "uuid-v1",
-                "url": "frame-url-1",
-                "human_reviewed": False,
-            },
-            {
-                "id": "uuid-f2",
-                "project_id": "uuid-p1",
-                "video_id": "uuid-v1",
-                "url": "frame-url-2",
-                "human_reviewed": False,
-            },
-        ]
-    }
-
-
 ###############################################################
 # Frames endpoints
 ###############################################################
-
-
-@app.get("/frames/{frame_id}")
-def get_frame(frame_id: str):
-    # TODO: use frame_id to fetch the requested frame from
-    # the database
-
-    return {
-        "frame": {
-            "id": "uuid-f1",
-            "project_id": "uuid-p1",
-            "video_id": "uuid-v1",
-            "url": "frame-url-1",
-            "human_reviewed": False,
-        }
-    }
 
 
 # Get the bounding boxes for this frame

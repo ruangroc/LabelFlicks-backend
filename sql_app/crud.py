@@ -156,7 +156,11 @@ def insert_boxes(db: Session, boxes: List[schemas.BoundingBoxCreate]):
 
 
 def get_boxes_by_frame_id(db: Session, frame_id: Uuid):
-    return db.query(models.BoundingBox).filter(models.BoundingBox.frame_id == frame_id).all()
+    return (
+        db.query(models.BoundingBox)
+        .filter(models.BoundingBox.frame_id == frame_id)
+        .all()
+    )
 
 
 ###############################################################
@@ -166,7 +170,10 @@ def get_boxes_by_frame_id(db: Session, frame_id: Uuid):
 
 def insert_labels(db: Session, labels: List[schemas.LabelCreate]):
     db_labels = [
-        models.Label(name=label.name, project_id=label.project_id) for label in labels
+        models.Label(
+            name=label.name, project_id=label.project_id, frame_id=label.frame_id
+        )
+        for label in labels
     ]
     db.add_all(db_labels)
     db.commit()

@@ -46,6 +46,7 @@ class Frame(Base):
 
     project = relationship("Project", back_populates="frames")
     video = relationship("Video", back_populates="frames")
+    labels = relationship("Label", back_populates="frames")
 
 
 class BoundingBox(Base):
@@ -68,6 +69,8 @@ class Label(Base):
     id = Column('id', Uuid, primary_key=True, index=True, unique=True, server_default=text("gen_random_uuid()"))
     name = Column('name', String, unique=True)
     project_id = Column('project_id', Uuid, ForeignKey("projects.id"))
+    frame_id = Column('frame_id', Uuid, ForeignKey("frames.id"))
 
     project = relationship("Project", back_populates="labels")
+    frames = relationship("Frame", back_populates="labels")
     
