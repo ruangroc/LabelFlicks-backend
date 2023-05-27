@@ -761,10 +761,17 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
             content={"message": "Video with ID " + video_id + " not found"},
         )
 
-    rows_returned = crud.get_frames_by_video_id(db, video_id)
+    video_frames = crud.get_frames_by_video_id(db, video_id)
+    labels_per_frame = crud.get_unique_labels_per_frame(db, video_id)
+
+    # Create a mapping from frame ID to list of unique labels detected in
+    # that frame that the next for loop can reference
+    labels_per_frame_dict = {}
+    for (frame_id, labels) in labels_per_frame:
+        labels_per_frame_dict[frame_id] = [] if labels == [None] else labels
 
     frames = []
-    for frame in rows_returned:
+    for frame in video_frames:
         # Convert from database query response model to response model
         parsed_frame = schemas.Frame.parse_obj(
             {
@@ -775,6 +782,7 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
                 "project_id": frame.project_id,
                 "video_id": frame.video_id,
                 "frame_url": frame.frame_url,
+                "labels": labels_per_frame_dict[frame.id]
             }
         )
         frames.append(parsed_frame)
@@ -782,55 +790,9 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
     return {"video_id": video_id, "frames": frames}
 
 
-# count = query parameter for specifying how many frames to get
-@app.get("/videos/{video_id}/random-frames")
-def get_random_frames(video_id: str, count: int = 10):
-    # TODO: use video_id to fetch a random set of frames not yet
-    # human-reviewed belonging to this video from the database
-
-    # TODO: use query parameter to specify how many to grab
-    # default can be 10 frames
-
-    return {
-        "frames": [
-            {
-                "id": "uuid-f1",
-                "project_id": "uuid-p1",
-                "video_id": "uuid-v1",
-                "url": "frame-url-1",
-                "human_reviewed": False,
-            },
-            {
-                "id": "uuid-f2",
-                "project_id": "uuid-p1",
-                "video_id": "uuid-v1",
-                "url": "frame-url-2",
-                "human_reviewed": False,
-            },
-        ]
-    }
-
-
 ###############################################################
 # Frames endpoints
 ###############################################################
-
-
-@app.get("/frames/{frame_id}")
-def get_frame(frame_id: str):
-    # TODO: use frame_id to fetch the requested frame from
-    # the database
-
-    return {
-        "frame": {
-            "id": "uuid-f1",
-            "project_id": "uuid-p1",
-            "video_id": "uuid-v1",
-            "url": "frame-url-1",
-            "human_reviewed": False,
-        }
-    }
-
 
 # Get the bounding boxes for this frame
 @app.get("/frames/{frame_id}/inferences")

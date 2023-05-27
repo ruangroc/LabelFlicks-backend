@@ -136,6 +136,8 @@ def test_upload_one_video():
     assert len(data["frames"]) == 64
     one_frame_id = data["frames"][0]["id"]
     another_frame_id = data["frames"][10]["id"]
+    assert "labels" in data["frames"][10]
+    assert len(data["frames"][10]["labels"]) == 2 # This frame detected 4 people and 1 car
 
     # To check that preprocessing worked, check that labels were 
     # created and bounding boxes inserted

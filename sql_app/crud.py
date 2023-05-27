@@ -1,6 +1,6 @@
 from typing import List
-from sqlalchemy.orm import Session
-from sqlalchemy import Uuid, String, update
+from sqlalchemy.orm import Session, aliased
+from sqlalchemy import Uuid, String, update, func
 
 from . import models, schemas
 
@@ -156,7 +156,11 @@ def insert_boxes(db: Session, boxes: List[schemas.BoundingBoxCreate]):
 
 
 def get_boxes_by_frame_id(db: Session, frame_id: Uuid):
-    return db.query(models.BoundingBox).filter(models.BoundingBox.frame_id == frame_id).all()
+    return (
+        db.query(models.BoundingBox)
+        .filter(models.BoundingBox.frame_id == frame_id)
+        .all()
+    )
 
 
 ###############################################################
@@ -182,3 +186,21 @@ def get_label_by_name_and_project(db: Session, name: str, project_id: Uuid):
 
 def get_labels_by_project(db: Session, project_id: Uuid):
     return db.query(models.Label).filter(models.Label.project_id == project_id).all()
+
+
+def get_unique_labels_per_frame(db: Session, video_id: Uuid):
+    # Define aliases for the tables
+    b = aliased(models.BoundingBox)
+    f = aliased(models.Frame)
+    l = aliased(models.Label)
+
+    # Build the JOIN query to get unique list of label IDs per frame
+    # in the specificied video
+    subquery = db.query(f.id).filter(f.video_id == video_id).subquery()
+    query = (
+        db.query(subquery.c.id, func.array_agg(l.id.distinct()))
+        .join(b, b.frame_id == subquery.c.id, isouter=True)
+        .join(l, l.id == b.label_id, isouter=True)
+        .group_by(subquery.c.id)
+    )
+    return query.all()
