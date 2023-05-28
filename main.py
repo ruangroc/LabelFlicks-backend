@@ -216,16 +216,13 @@ def preprocess_video(
                     "height": height,
                     "project_id": project_id,
                     "video_id": video_id,
-                    "frame_url": storage_location["path"]
-                    + "/"
-                    + str(index)
-                    + ".jpg",
+                    "frame_url": storage_location["path"] + "/" + str(index) + ".jpg",
                 }
             )
             inserted_frame = crud.insert_one_frame(db, new_frame)
             # if inserted_frame:
             #     predict_bounding_boxes(image, inserted_frame.id, project_id, db)
-                
+
         else:
             is_success = cv2.imwrite(
                 storage_location["path"] + "/" + str(index) + ".jpg", image
@@ -235,7 +232,7 @@ def preprocess_video(
                 # Signify that preprocessing failed for this video so caller can restart
                 crud.set_video_preprocessing_status(db, video_id, "failed")
                 return
-            
+
             new_frame = schemas.FrameCreate.parse_obj(
                 {
                     "width": width,
@@ -248,7 +245,6 @@ def preprocess_video(
             inserted_frame = crud.insert_one_frame(db, new_frame)
             # if inserted_frame:
             #     predict_bounding_boxes(image, inserted_frame.id, project_id, db)
-
 
         if inserted_frame:
             predict_bounding_boxes(image, inserted_frame.id, project_id, db)
@@ -752,7 +748,7 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
             status_code=400,
             content={"message": "Video ID " + video_id + " is not a valid UUID"},
         )
-    
+
     res = crud.get_video_by_id(db, video_id)
 
     if res == None:
@@ -767,7 +763,7 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
     # Create a mapping from frame ID to list of unique labels detected in
     # that frame that the next for loop can reference
     labels_per_frame_dict = {}
-    for (frame_id, labels) in labels_per_frame:
+    for frame_id, labels in labels_per_frame:
         labels_per_frame_dict[frame_id] = [] if labels == [None] else labels
 
     frames = []
@@ -782,7 +778,7 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
                 "project_id": frame.project_id,
                 "video_id": frame.video_id,
                 "frame_url": frame.frame_url,
-                "labels": labels_per_frame_dict[frame.id]
+                "labels": labels_per_frame_dict[frame.id],
             }
         )
         frames.append(parsed_frame)
@@ -794,6 +790,7 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
 # Frames endpoints
 ###############################################################
 
+
 # Get the bounding boxes for this frame
 @app.get("/frames/{frame_id}/inferences")
 def get_frame_inferences(frame_id: str, db: Session = Depends(get_db)):
@@ -804,7 +801,7 @@ def get_frame_inferences(frame_id: str, db: Session = Depends(get_db)):
             status_code=400,
             content={"message": "Frame ID " + frame_id + " is not a valid UUID"},
         )
-    
+
     res = crud.get_frame_by_id(db, frame_id)
 
     if res == None:
@@ -812,12 +809,12 @@ def get_frame_inferences(frame_id: str, db: Session = Depends(get_db)):
             status_code=404,
             content={"message": "Frame with ID " + frame_id + " not found"},
         )
-    
+
     rows_returned = crud.get_boxes_by_frame_id(db, frame_id)
 
     boxes = []
     for row in rows_returned:
-        box = schemas.BoundingBoxCreate.parse_obj(
+        box = schemas.BoundingBox.parse_obj(
             {
                 "x_top_left": row.x_top_left,
                 "y_top_left": row.y_top_left,
@@ -827,6 +824,7 @@ def get_frame_inferences(frame_id: str, db: Session = Depends(get_db)):
                 "height": row.height,
                 "frame_id": frame_id,
                 "label_id": row.label_id,
+                "id": row.id
             }
         )
         boxes.append(box)
@@ -859,3 +857,20 @@ def get_frame_annotations(frame_id: str, format: str = "coco"):
             }
         ],
     }
+
+
+###############################################################
+# Bounding Boxes endpoints
+###############################################################
+
+
+@app.post("/boundingboxes")
+async def update_bounding_boxes(
+    updated_boxes: List[schemas.BoundingBox],
+    db: Session = Depends(get_db),
+):
+    result = crud.update_boxes(db, updated_boxes)
+    if dict(result) != {}:
+        return 500
+    
+    return 200

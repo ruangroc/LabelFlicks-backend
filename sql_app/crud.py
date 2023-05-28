@@ -163,6 +163,14 @@ def get_boxes_by_frame_id(db: Session, frame_id: Uuid):
     )
 
 
+def update_boxes(db: Session, updated_boxes: List[schemas.BoundingBox]):
+    result = db.execute(
+        update(models.BoundingBox),
+        [box.dict() for box in updated_boxes]
+    )
+    db.commit()
+    return result
+
 ###############################################################
 # labels table
 ###############################################################
