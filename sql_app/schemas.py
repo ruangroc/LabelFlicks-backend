@@ -1,8 +1,11 @@
-from typing import List, Union
+from typing import List
 from uuid import UUID
 from datetime import date
 
 from pydantic import BaseModel
+
+import numpy as np
+import torch
 
 # Define all Pydantic models that define valid data shapes for the API
 
@@ -89,7 +92,7 @@ class BoundingBoxBase(BaseModel):
 # We should know everything about a new BoundingBox
 # except for the auto-generated UUID
 class BoundingBoxCreate(BoundingBoxBase):
-    pass
+    image_features: bytes
 
 # When fetching a bounding box, we should know everything
 class BoundingBox(BoundingBoxBase):

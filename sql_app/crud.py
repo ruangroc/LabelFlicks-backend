@@ -148,6 +148,7 @@ def insert_boxes(db: Session, boxes: List[schemas.BoundingBoxCreate]):
             height=box.height,
             frame_id=box.frame_id,
             label_id=box.label_id,
+            image_features=box.image_features
         )
         for box in boxes
     ]

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Uuid, Date, text
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Uuid, Date, text, LargeBinary
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -60,6 +60,7 @@ class BoundingBox(Base):
     height = Column('height', Integer)
     frame_id = Column('frame_id', Uuid, ForeignKey("frames.id"))
     label_id = Column('label_id', Uuid, ForeignKey("labels.id"))
+    image_features = Column('image_features', LargeBinary)
 
 
 class Label(Base):

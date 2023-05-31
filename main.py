@@ -20,9 +20,24 @@ import cv2
 from io import BytesIO
 import tempfile
 from ultralytics import YOLO
+import torch
+import torchvision.transforms.functional as TF
+# import torchvision.models as TM
+from efficientnet_pytorch import EfficientNet
+
 
 # Load pre-trained YOLO object detection model
 yolo_model = YOLO("yolov8n.pt")
+
+# Load pre-trained image feature extraction model
+# feature_extraction_model = TM.efficientnet_b0(weights=TM.EfficientNet_B0_Weights.IMAGENET1K_V1)
+# for param in feature_extraction_model.parameters():
+#     param.requires_grad = False
+# feature_extraction_model.eval()
+
+# Trying another library
+feature_extraction_model = EfficientNet.from_pretrained('efficientnet-b0')
+feature_extraction_model.eval()
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -119,17 +134,21 @@ def predict_bounding_boxes(
     # Put info about each box into a standard format
     boxes = []
     for box in yolo_results[0].boxes:
-        # print("\n box.xyxy:", box.xyxy, "\n")
-        # print("\n box.xywh:", box.xywh, "\n")
 
         # Box information given as tensor([[float, float, float, float]])
-        x_top_left = box.xyxy[0][0]
-        y_top_left = box.xyxy[0][1]
-        x_bottom_right = box.xyxy[0][2]
-        y_bottom_right = box.xyxy[0][3]
-        width = box.xywh[0][2]
-        height = box.xywh[0][3]
+        x_top_left = int(box.xyxy[0][0])
+        y_top_left = int(box.xyxy[0][1])
+        x_bottom_right = int(box.xyxy[0][2])
+        y_bottom_right = int(box.xyxy[0][3])
+        width = int(box.xywh[0][2])
+        height = int(box.xywh[0][3])
         label_name = yolo_class_ids_to_names[int(box.cls)]
+
+        # Crop image to what's inside the bounding box and get the feature vector for that cropped area
+        cropped_image = TF.crop(TF.to_tensor(frame_image), y_top_left, x_top_left, height, width).unsqueeze(0)
+        padded_image = TF.resize(cropped_image, (128, 128), antialias=True)
+        image_features = feature_extraction_model(padded_image)
+        image_features = bytearray(image_features.flatten().detach().numpy())
 
         db_box = schemas.BoundingBoxCreate.parse_obj(
             {
@@ -141,6 +160,7 @@ def predict_bounding_boxes(
                 "height": height,
                 "frame_id": frame_id,
                 "label_id": label_names_to_db_ids[label_name],
+                "image_features": image_features
             }
         )
         boxes.append(db_box)
@@ -824,7 +844,7 @@ def get_frame_inferences(frame_id: str, db: Session = Depends(get_db)):
                 "height": row.height,
                 "frame_id": frame_id,
                 "label_id": row.label_id,
-                "id": row.id
+                "id": row.id,
             }
         )
         boxes.append(box)
