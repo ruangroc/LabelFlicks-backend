@@ -172,6 +172,23 @@ def update_boxes(db: Session, updated_boxes: List[schemas.BoundingBox]):
     db.commit()
     return result
 
+
+def get_box_vectors_and_labels_by_video_id(db: Session, video_id: Uuid):
+    b = aliased(models.BoundingBox)
+    f = aliased(models.Frame)
+    l = aliased(models.Label)
+
+    # Find all bounding boxes from every frame that exists in this video
+    # and return 
+    subquery = db.query(f.id).filter(f.video_id == video_id).subquery()
+    query = (
+        db.query(subquery.c.id, b.image_features, l.name, f.human_reviewed)
+        .join(b, b.frame_id == subquery.c.id)
+        .join(l, l.id == b.label_id, isouter=True)
+    )
+    return query.all()
+
+
 ###############################################################
 # labels table
 ###############################################################

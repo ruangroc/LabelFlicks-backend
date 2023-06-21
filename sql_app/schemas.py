@@ -94,12 +94,21 @@ class BoundingBoxBase(BaseModel):
 class BoundingBoxCreate(BoundingBoxBase):
     image_features: bytes
 
-# When fetching a bounding box, we should know everything
 class BoundingBox(BoundingBoxBase):
     id: UUID
 
     class Config:
         orm_mode = True
+
+
+# ORM configured class can't be used to receive client requests: https://stackoverflow.com/a/70845083
+# Hence the two below classes
+# class UpdatedBoundingBox(BoundingBoxBase):
+#     id: UUID
+
+# class BoundingBox(UpdatedBoundingBox):
+#     class Config:
+#         orm_mode = True
 
 ###############################################################
 # Label schemas

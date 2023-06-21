@@ -60,7 +60,7 @@ class BoundingBox(Base):
     height = Column('height', Integer)
     frame_id = Column('frame_id', Uuid, ForeignKey("frames.id"))
     label_id = Column('label_id', Uuid, ForeignKey("labels.id"))
-    image_features = Column('image_features', LargeBinary)
+    image_features = Column('image_features', LargeBinary(length=21000))
 
 
 class Label(Base):

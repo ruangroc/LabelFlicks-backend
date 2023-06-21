@@ -20,22 +20,15 @@ import cv2
 from io import BytesIO
 import tempfile
 from ultralytics import YOLO
-import torch
 import torchvision.transforms.functional as TF
-# import torchvision.models as TM
 from efficientnet_pytorch import EfficientNet
-
+from model_training import ClassifierManager
+import pickle
 
 # Load pre-trained YOLO object detection model
 yolo_model = YOLO("yolov8n.pt")
 
-# Load pre-trained image feature extraction model
-# feature_extraction_model = TM.efficientnet_b0(weights=TM.EfficientNet_B0_Weights.IMAGENET1K_V1)
-# for param in feature_extraction_model.parameters():
-#     param.requires_grad = False
-# feature_extraction_model.eval()
-
-# Trying another library
+# Load pre-trained image feature extraction model (EfficientNet)
 feature_extraction_model = EfficientNet.from_pretrained('efficientnet-b0')
 feature_extraction_model.eval()
 
@@ -146,9 +139,9 @@ def predict_bounding_boxes(
 
         # Crop image to what's inside the bounding box and get the feature vector for that cropped area
         cropped_image = TF.crop(TF.to_tensor(frame_image), y_top_left, x_top_left, height, width).unsqueeze(0)
-        padded_image = TF.resize(cropped_image, (128, 128), antialias=True)
-        image_features = feature_extraction_model(padded_image)
-        image_features = bytearray(image_features.flatten().detach().numpy())
+        padded_image = TF.resize(cropped_image, (64, 64), antialias=True)
+        image_features = feature_extraction_model.extract_features(padded_image)
+        image_features = pickle.dumps(image_features.detach())
 
         db_box = schemas.BoundingBoxCreate.parse_obj(
             {
@@ -886,11 +879,79 @@ def get_frame_annotations(frame_id: str, format: str = "coco"):
 
 @app.post("/boundingboxes")
 async def update_bounding_boxes(
+    project_id: str,
+    video_id: str,
     updated_boxes: List[schemas.BoundingBox],
     db: Session = Depends(get_db),
 ):
+    # Validate that project_id is a valid UUID
+    try:
+        uuid.UUID(project_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Project ID " + project_id + " is not a valid UUID"},
+        )
+
+    res = crud.get_project_by_id(db, project_id)
+
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Project with ID " + project_id + " not found"},
+        )
+    
+    # Validate that video_id is a valid UUID
+    try:
+        uuid.UUID(video_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Video ID " + video_id + " is not a valid UUID"},
+        )
+
+    res = crud.get_video_by_id(db, video_id)
+
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Video with ID " + video_id + " not found"},
+        )
+    
+    # Save the updated bounding box information
     result = crud.update_boxes(db, updated_boxes)
     if dict(result) != {}:
         return 500
     
+    # Find out the specific labels used within this project
+    project_labels = crud.get_labels_by_project(db, project_id)
+    unique_labels = [label.name for label in project_labels]
+    
+    # Fetch image_features and label names for each box for each
+    # frame in a video (the one specified in updated_boxes)
+    # Also filter boxes so that we only get the ones that have yet to 
+    # be human-reviewed (else might overwrite human-reviewed labels)
+    boxes = crud.get_box_vectors_and_labels_by_video_id(db, video_id)
+    box_vectors = []
+    box_labels = []
+    unreviewed_boxes = []
+    for box in boxes:
+        box_vectors.append(box.image_features)
+        box_labels.append(box.name)
+        if not box.human_reviewed:
+            unreviewed_boxes.append(box.image_features)
+
+    # Instantiate a new classification model (small, feed forward network)
+    # input_dim=128*128*3 ?
+    model = ClassifierManager(box_vectors, box_labels, unique_labels)
+    
+    # Train the model using all of the bounding box information
+    model.fit()
+
+    # Get new label predictions for each box
+    new_predictions = model.predict(unreviewed_boxes)
+    print("\nnew_predictions", len(new_predictions), type(new_predictions))
+
+    # Save them in the database and return them to the client
+
     return 200
