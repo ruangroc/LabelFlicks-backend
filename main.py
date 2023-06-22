@@ -982,3 +982,14 @@ async def update_bounding_boxes(
 
     # Let the client know everything went well and to proceed
     return 200
+
+
+@app.put("/boundingboxes")
+def update_boxes_without_inference(
+    updated_boxes: List[schemas.BoundingBox], db: Session = Depends(get_db)
+):
+    # Save the updated bounding box information
+    result = crud.update_boxes(db, updated_boxes)
+    if dict(result) != {}:
+        return 500
+    return 200
