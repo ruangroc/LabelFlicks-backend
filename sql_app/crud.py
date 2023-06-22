@@ -148,7 +148,8 @@ def insert_boxes(db: Session, boxes: List[schemas.BoundingBoxCreate]):
             height=box.height,
             frame_id=box.frame_id,
             label_id=box.label_id,
-            image_features=box.image_features
+            image_features=box.image_features,
+            prediction=box.prediction,
         )
         for box in boxes
     ]
@@ -166,8 +167,7 @@ def get_boxes_by_frame_id(db: Session, frame_id: Uuid):
 
 def update_boxes(db: Session, updated_boxes: List[schemas.BoundingBox]):
     result = db.execute(
-        update(models.BoundingBox),
-        [box.dict() for box in updated_boxes]
+        update(models.BoundingBox), [box.dict() for box in updated_boxes]
     )
     db.commit()
     return result
@@ -179,10 +179,9 @@ def get_box_vectors_and_labels_by_video_id(db: Session, video_id: Uuid):
     l = aliased(models.Label)
 
     # Find all bounding boxes from every frame that exists in this video
-    # and return 
     subquery = db.query(f.id).filter(f.video_id == video_id).subquery()
     query = (
-        db.query(subquery.c.id, b.image_features, l.name, f.human_reviewed)
+        db.query(b, subquery.c.id, l.name)
         .join(b, b.frame_id == subquery.c.id)
         .join(l, l.id == b.label_id, isouter=True)
     )

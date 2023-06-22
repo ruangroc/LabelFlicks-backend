@@ -88,6 +88,7 @@ class BoundingBoxBase(BaseModel):
     height: int
     frame_id: UUID
     label_id: UUID
+    prediction: bool
 
 # We should know everything about a new BoundingBox
 # except for the auto-generated UUID

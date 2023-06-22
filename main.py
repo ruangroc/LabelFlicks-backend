@@ -29,7 +29,7 @@ import pickle
 yolo_model = YOLO("yolov8n.pt")
 
 # Load pre-trained image feature extraction model (EfficientNet)
-feature_extraction_model = EfficientNet.from_pretrained('efficientnet-b0')
+feature_extraction_model = EfficientNet.from_pretrained("efficientnet-b0")
 feature_extraction_model.eval()
 
 # Create database tables
@@ -127,7 +127,6 @@ def predict_bounding_boxes(
     # Put info about each box into a standard format
     boxes = []
     for box in yolo_results[0].boxes:
-
         # Box information given as tensor([[float, float, float, float]])
         x_top_left = int(box.xyxy[0][0])
         y_top_left = int(box.xyxy[0][1])
@@ -138,7 +137,9 @@ def predict_bounding_boxes(
         label_name = yolo_class_ids_to_names[int(box.cls)]
 
         # Crop image to what's inside the bounding box and get the feature vector for that cropped area
-        cropped_image = TF.crop(TF.to_tensor(frame_image), y_top_left, x_top_left, height, width).unsqueeze(0)
+        cropped_image = TF.crop(
+            TF.to_tensor(frame_image), y_top_left, x_top_left, height, width
+        ).unsqueeze(0)
         padded_image = TF.resize(cropped_image, (64, 64), antialias=True)
         image_features = feature_extraction_model.extract_features(padded_image)
         image_features = pickle.dumps(image_features.detach())
@@ -153,7 +154,8 @@ def predict_bounding_boxes(
                 "height": height,
                 "frame_id": frame_id,
                 "label_id": label_names_to_db_ids[label_name],
-                "image_features": image_features
+                "image_features": image_features,
+                "prediction": True,
             }
         )
         boxes.append(db_box)
@@ -838,6 +840,7 @@ def get_frame_inferences(frame_id: str, db: Session = Depends(get_db)):
                 "frame_id": frame_id,
                 "label_id": row.label_id,
                 "id": row.id,
+                "prediction": row.prediction,
             }
         )
         boxes.append(box)
@@ -900,7 +903,7 @@ async def update_bounding_boxes(
             status_code=404,
             content={"message": "Project with ID " + project_id + " not found"},
         )
-    
+
     # Validate that video_id is a valid UUID
     try:
         uuid.UUID(video_id)
@@ -917,41 +920,65 @@ async def update_bounding_boxes(
             status_code=404,
             content={"message": "Video with ID " + video_id + " not found"},
         )
-    
+
     # Save the updated bounding box information
     result = crud.update_boxes(db, updated_boxes)
     if dict(result) != {}:
         return 500
-    
+
     # Find out the specific labels used within this project
     project_labels = crud.get_labels_by_project(db, project_id)
-    unique_labels = [label.name for label in project_labels]
-    
+    label2id = {label.name: label.id for label in project_labels}
+    unique_labels = list(label2id.keys())
+
     # Fetch image_features and label names for each box for each
     # frame in a video (the one specified in updated_boxes)
-    # Also filter boxes so that we only get the ones that have yet to 
-    # be human-reviewed (else might overwrite human-reviewed labels)
-    boxes = crud.get_box_vectors_and_labels_by_video_id(db, video_id)
+    all_boxes = crud.get_box_vectors_and_labels_by_video_id(db, video_id)
     box_vectors = []
     box_labels = []
     unreviewed_boxes = []
-    for box in boxes:
+    for row in all_boxes:
+        box = row[0]
         box_vectors.append(box.image_features)
-        box_labels.append(box.name)
-        if not box.human_reviewed:
-            unreviewed_boxes.append(box.image_features)
+        box_labels.append(row.name)
+        if box.prediction == True:
+            unreviewed_boxes.append(box)
 
     # Instantiate a new classification model (small, feed forward network)
     # input_dim=128*128*3 ?
     model = ClassifierManager(box_vectors, box_labels, unique_labels)
-    
+
     # Train the model using all of the bounding box information
     model.fit()
 
-    # Get new label predictions for each box
-    new_predictions = model.predict(unreviewed_boxes)
-    print("\nnew_predictions", len(new_predictions), type(new_predictions))
+    if len(unreviewed_boxes) > 0:
+        # Get new label predictions for each box
+        unreviewed_boxes_vectors = [box.image_features for box in unreviewed_boxes]
+        new_predictions = model.predict(unreviewed_boxes_vectors)
 
-    # Save them in the database and return them to the client
+        # Attach the new label predictions to each box
+        new_predicted_boxes = []
+        for updated_label, box in zip(new_predictions, unreviewed_boxes):
+            new_box = schemas.BoundingBox.parse_obj(
+                {
+                    "x_top_left": box.x_top_left,
+                    "y_top_left": box.y_top_left,
+                    "x_bottom_right": box.x_bottom_right,
+                    "y_bottom_right": box.y_bottom_right,
+                    "width": box.width,
+                    "height": box.height,
+                    "frame_id": box.frame_id,
+                    "label_id": label2id[updated_label],
+                    "id": box.id,
+                    "prediction": True,
+                }
+            )
+            new_predicted_boxes.append(new_box)
 
+        # Save updated label predictions in the database
+        result = crud.update_boxes(db, new_predicted_boxes)
+        if dict(result) != {}:
+            return 500
+
+    # Let the client know everything went well and to proceed
     return 200

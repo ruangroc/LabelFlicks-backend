@@ -61,6 +61,7 @@ class BoundingBox(Base):
     frame_id = Column('frame_id', Uuid, ForeignKey("frames.id"))
     label_id = Column('label_id', Uuid, ForeignKey("labels.id"))
     image_features = Column('image_features', LargeBinary(length=21000))
+    prediction = Column('prediction', Boolean, default=True)
 
 
 class Label(Base):
