@@ -1032,3 +1032,33 @@ def update_boxes_without_inference(
     if dict(result) != {}:
         return 500
     return 200
+
+@app.delete("/boundingboxes/{box_id}")
+def delete_bounding_box(box_id: str, db: Session = Depends(get_db)):
+    try:
+        uuid.UUID(box_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Bounding Box ID " + box_id + " is not a valid UUID"},
+        )
+
+    res = crud.get_box_by_id(db, box_id)
+
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Bounding box with ID " + box_id + " not found"},
+        )
+    
+    crud.delete_box_by_id(db, box_id)
+
+    # Check that it was actually deleted
+    res = crud.get_box_by_id(db, box_id)
+    if res != None:
+        return JSONResponse(
+            status_code=500,
+            content={"message": "Bounding box with ID " + box_id + " was not deleted"},
+        )
+
+    return 200

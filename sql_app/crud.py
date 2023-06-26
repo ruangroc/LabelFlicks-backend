@@ -1,6 +1,6 @@
 from typing import List
 from sqlalchemy.orm import Session, aliased
-from sqlalchemy import Uuid, String, update, func
+from sqlalchemy import Uuid, String, update, func, delete
 
 from . import models, schemas
 
@@ -194,6 +194,17 @@ def get_box_vectors_and_labels_by_video_id(db: Session, video_id: Uuid):
         .join(l, l.id == b.label_id, isouter=True)
     )
     return query.all()
+
+
+def get_box_by_id(db: Session, box_id: Uuid):
+    return db.query(models.BoundingBox).filter(models.BoundingBox.id == box_id).first()
+
+
+def delete_box_by_id(db: Session, box_id: Uuid):
+    db.execute(
+        delete(models.BoundingBox).where(models.BoundingBox.id == box_id)
+    )
+    db.commit()
 
 
 ###############################################################
