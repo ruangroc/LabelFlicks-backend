@@ -420,6 +420,33 @@ def get_project_labels(project_id: str, db: Session = Depends(get_db)):
     return {"project_id": project_id, "labels": labels}
 
 
+@app.post("/projects/{project_id}/labels")
+def create_project_labels(project_id: str, labels: List[str], db: Session = Depends(get_db)):
+    # Validate that project_id is a valid UUID
+    try:
+        uuid.UUID(project_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Project ID " + project_id + " is not a valid UUID"},
+        )
+
+    res = crud.get_project_by_id(db, project_id)
+
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Project with ID " + project_id + " not found"},
+        )
+
+    new_labels = [schemas.LabelCreate.parse_obj(
+                    {"project_id": project_id, "name": str(label_name)}
+                ) for label_name in labels]
+    crud.insert_labels(db, new_labels)
+
+    return 200
+
+
 @app.get("/projects/{project_id}/labeled-images")
 def get_project_labeled_images(project_id: str):
     # TODO: use project_id to retrieve all annotated images
