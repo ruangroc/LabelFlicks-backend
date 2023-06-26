@@ -132,6 +132,14 @@ def get_frame_by_id(db: Session, frame_id: Uuid):
     return db.query(models.Frame).filter(models.Frame.id == frame_id).first()
 
 
+def update_frames(db: Session, updated_frames: List[schemas.Frame]):
+    result = db.execute(
+        update(models.Frame), [frame.dict() for frame in updated_frames]
+    )
+    db.commit()
+    return result
+
+
 ###############################################################
 # bounding_boxes table
 ###############################################################

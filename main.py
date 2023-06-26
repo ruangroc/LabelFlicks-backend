@@ -875,6 +875,18 @@ def get_frame_annotations(frame_id: str, format: str = "coco"):
     }
 
 
+@app.put("/frames")
+async def update_frames(
+    updated_frames: List[schemas.Frame],
+    db: Session = Depends(get_db),
+):
+    # Save the updated frames information
+    result = crud.update_frames(db, updated_frames)
+    if dict(result) != {}:
+        return 500
+    return 200
+
+
 ###############################################################
 # Bounding Boxes endpoints
 ###############################################################
