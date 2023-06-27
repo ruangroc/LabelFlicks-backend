@@ -59,9 +59,11 @@ class BoundingBox(Base):
     width = Column('width', Integer)
     height = Column('height', Integer)
     frame_id = Column('frame_id', Uuid, ForeignKey("frames.id"))
-    label_id = Column('label_id', Uuid, ForeignKey("labels.id"))
+    label_id = Column('label_id', Uuid, ForeignKey("labels.id"), nullable=True)
     image_features = Column('image_features', LargeBinary(length=21000))
     prediction = Column('prediction', Boolean, default=True)
+
+    label = relationship("Label", cascade="all, delete")
 
 
 class Label(Base):

@@ -447,6 +447,60 @@ def create_project_labels(project_id: str, labels: List[str], db: Session = Depe
     return 200
 
 
+@app.delete("/projects/{project_id}/labels/{label_id}")
+def delete_label(project_id: str, label_id: str, db: Session = Depends(get_db)):
+    try:
+        uuid.UUID(project_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Project ID " + project_id + " is not a valid UUID"},
+        )
+
+    res = crud.get_project_by_id(db, project_id)
+
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Project with ID " + project_id + " not found"},
+        )
+    
+    try:
+        uuid.UUID(label_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Label ID " + label_id + " is not a valid UUID"},
+        )
+
+    res = crud.get_label_by_id(db, label_id)
+
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Label with ID " + label_id + " not found"},
+        )
+    
+    # Get the most common label in the project
+    res = crud.get_label_counts_by_project(db, project_id)
+    most_common_label = res[0][0]
+
+    # Delete the specified label and point affected boxes to the 
+    # most common label instead
+    crud.replace_label(db, label_id, most_common_label)
+    crud.delete_label_by_id(db, label_id)
+
+    # Check that the specified label was actually deleted
+    res = crud.get_label_by_id(db, label_id)
+    if res != None:
+        return JSONResponse(
+            status_code=500,
+            content={"message": "Label with ID " + label_id + " was not deleted"},
+        )
+
+    return 200
+
+
 @app.get("/projects/{project_id}/labeled-images")
 def get_project_labeled_images(project_id: str):
     # TODO: use project_id to retrieve all annotated images
@@ -978,13 +1032,18 @@ async def update_bounding_boxes(
     unreviewed_boxes = []
     for row in all_boxes:
         box = row[0]
-        box_vectors.append(box.image_features)
-        box_labels.append(row.name)
+        # Will train on reviewed boxes and predict labels for unreviewed boxes
         if box.prediction == True:
             unreviewed_boxes.append(box)
+        else:
+            box_vectors.append(box.image_features)
+            box_labels.append(row.name)
+
+    # If there's nothing to train on, just return
+    if len(box_vectors) < 1:
+        return 200
 
     # Instantiate a new classification model (small, feed forward network)
-    # input_dim=128*128*3 ?
     model = ClassifierManager(box_vectors, box_labels, unique_labels)
 
     # Train the model using all of the bounding box information

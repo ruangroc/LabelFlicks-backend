@@ -201,9 +201,7 @@ def get_box_by_id(db: Session, box_id: Uuid):
 
 
 def delete_box_by_id(db: Session, box_id: Uuid):
-    db.execute(
-        delete(models.BoundingBox).where(models.BoundingBox.id == box_id)
-    )
+    db.execute(delete(models.BoundingBox).where(models.BoundingBox.id == box_id))
     db.commit()
 
 
@@ -232,6 +230,17 @@ def get_labels_by_project(db: Session, project_id: Uuid):
     return db.query(models.Label).filter(models.Label.project_id == project_id).all()
 
 
+def get_label_counts_by_project(db: Session, project_id: Uuid):
+    return (
+        db.query(models.Label.id, models.Label.name, func.count(models.BoundingBox.id))
+        .join(models.BoundingBox, models.BoundingBox.label_id == models.Label.id)
+        .filter(models.Label.project_id == project_id)
+        .group_by(models.Label)
+        .order_by(func.count(models.BoundingBox.id).desc())
+        .all()
+    )
+
+
 def get_unique_labels_per_frame(db: Session, video_id: Uuid):
     # Define aliases for the tables
     b = aliased(models.BoundingBox)
@@ -248,3 +257,21 @@ def get_unique_labels_per_frame(db: Session, video_id: Uuid):
         .group_by(subquery.c.id)
     )
     return query.all()
+
+
+def get_label_by_id(db: Session, label_id: Uuid):
+    return db.query(models.Label).filter(models.Label.id == label_id).first()
+
+
+def replace_label(db: Session, label_id: Uuid, replace_id: Uuid):
+    db.execute(
+        update(models.BoundingBox)
+        .where(models.BoundingBox.label_id == label_id)
+        .values(label_id=replace_id)
+    )
+    db.commit()
+
+
+def delete_label_by_id(db: Session, label_id: Uuid):
+    db.execute(delete(models.Label).where(models.Label.id == label_id))
+    db.commit()
