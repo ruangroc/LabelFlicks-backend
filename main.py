@@ -24,6 +24,7 @@ import torchvision.transforms.functional as TF
 from efficientnet_pytorch import EfficientNet
 from model_training import ClassifierManager
 import pickle
+import shutil
 
 # Load pre-trained YOLO object detection model
 yolo_model = YOLO("yolov8n.pt")
@@ -501,14 +502,75 @@ def delete_label(project_id: str, label_id: str, db: Session = Depends(get_db)):
     return 200
 
 
-@app.get("/projects/{project_id}/labeled-images")
-def get_project_labeled_images(project_id: str):
-    # TODO: use project_id to retrieve all annotated images
-    # contains (bounding boxes and class labels) for all
-    # frames from this project
+@app.get("/projects/{project_id}/annotations")
+def get_project_annotations(project_id: str, db: Session = Depends(get_db)):
+    try:
+        uuid.UUID(project_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Project ID " + project_id + " is not a valid UUID"},
+        )
 
-    return {"id": project_id, "labeled-images": []}
+    project = crud.get_project_by_id(db, project_id)
 
+    if project == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Project with ID " + project_id + " not found"},
+        )
+    
+    # Create default save location
+    # TODO: later be able to download frames and annotations from Azure
+    local_save_path = os.getcwd() + "/local_projects/" + project.name
+    storage_location = {
+        "azure": False,
+        "path": local_save_path + "/annotations",
+        "container": "",
+    }
+
+    # Create the project_name/annotations directory
+    if not os.path.exists(storage_location["path"]):
+        os.makedirs(storage_location["path"])
+
+    # Create the frames and boxes subdirectories
+    if not os.path.exists(storage_location["path"] + "/frames"):
+        os.makedirs(storage_location["path"] + "/frames")
+    if not os.path.exists(storage_location["path"] + "/boxes"):
+        os.makedirs(storage_location["path"] + "/boxes")
+    
+    # Save all current labels and UUIDs in a single txt file
+    project_labels = crud.get_labels_by_project(db, project_id)
+    labels_to_write = [str(label.id) + " " + label.name + "\n" for label in project_labels]
+    with open(storage_location["path"] + "/labels.txt", "w") as labelsfile:
+        labelsfile.writelines(labels_to_write)
+    
+    # Save all frames from all videos as frameUUID.jpg files
+    project_frames = crud.get_frames_by_project_id(db, project_id)
+    for frame in project_frames:
+        shutil.copyfile(frame.frame_url, storage_location["path"] + "/frames/" + str(frame.id) + ".jpg")
+
+        # Save all bounding boxes from all videos in frameUUID.txt files
+        # using the YOLO format: labelUUID center_x center_y width height
+        frame_boxes = crud.get_boxes_by_frame_id(db, frame.id)
+        boxes_to_write = []
+        for box in frame_boxes:
+            center_x = ((box.x_top_left + box.x_bottom_right) / 2) / frame.width
+            center_y = ((box.y_top_left + box.y_bottom_right) / 2) / frame.height
+            normalized_width = box.width / frame.width
+            normalized_height = box.height / frame.height
+            boxes_to_write.append(f"{str(box.label_id)} {center_x} {center_y} {normalized_width} {normalized_height}\n")
+        with open(storage_location["path"] + "/boxes/" + str(frame.id) + ".txt", "w") as boxfile:
+            boxfile.writelines(boxes_to_write)
+
+    # Tell the client where to find the annotations, images, and labels
+    return JSONResponse(
+        status_code=200,
+        content={
+            "id": project_id, 
+            "annotations-path": storage_location["path"]
+        },
+    )
 
 @app.get("/projects/{project_id}/videos")
 def get_project_videos(project_id: str, db: Session = Depends(get_db)):
