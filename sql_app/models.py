@@ -70,7 +70,7 @@ class Label(Base):
     __tablename__ = "labels"
 
     id = Column('id', Uuid, primary_key=True, index=True, unique=True, server_default=text("gen_random_uuid()"))
-    name = Column('name', String, unique=True)
+    name = Column('name', String)
     project_id = Column('project_id', Uuid, ForeignKey("projects.id"))
 
     project = relationship("Project", back_populates="labels")

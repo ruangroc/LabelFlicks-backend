@@ -371,25 +371,6 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
     return project
 
 
-@app.put("/projects/{project_id}")
-async def rename_project(project_id: str, project: schemas.ProjectCreate):
-    # TODO: use project_id to update name of the project,
-    # or return error for invalid id
-
-    return {
-        "project": {"id": project_id, "name": project["name"], "percent_labeled": 10}
-    }
-
-
-@app.delete("/projects/{project_id}")
-def delete_project(project_id: str):
-    # TODO: delete requested project and all associated
-    # artifacts (videos, images, numpy files, bounding boxes)
-
-    # TODO: return status code from SQL delete operation
-    return 200
-
-
 @app.get("/projects/{project_id}/labels")
 def get_project_labels(project_id: str, db: Session = Depends(get_db)):
     # Validate that project_id is a valid UUID
@@ -422,7 +403,9 @@ def get_project_labels(project_id: str, db: Session = Depends(get_db)):
 
 
 @app.post("/projects/{project_id}/labels")
-def create_project_labels(project_id: str, labels: List[str], db: Session = Depends(get_db)):
+def create_project_labels(
+    project_id: str, labels: List[str], db: Session = Depends(get_db)
+):
     # Validate that project_id is a valid UUID
     try:
         uuid.UUID(project_id)
@@ -440,9 +423,12 @@ def create_project_labels(project_id: str, labels: List[str], db: Session = Depe
             content={"message": "Project with ID " + project_id + " not found"},
         )
 
-    new_labels = [schemas.LabelCreate.parse_obj(
-                    {"project_id": project_id, "name": str(label_name)}
-                ) for label_name in labels]
+    new_labels = [
+        schemas.LabelCreate.parse_obj(
+            {"project_id": project_id, "name": str(label_name)}
+        )
+        for label_name in labels
+    ]
     crud.insert_labels(db, new_labels)
 
     return 200
@@ -465,7 +451,7 @@ def delete_label(project_id: str, label_id: str, db: Session = Depends(get_db)):
             status_code=404,
             content={"message": "Project with ID " + project_id + " not found"},
         )
-    
+
     try:
         uuid.UUID(label_id)
     except:
@@ -481,12 +467,12 @@ def delete_label(project_id: str, label_id: str, db: Session = Depends(get_db)):
             status_code=404,
             content={"message": "Label with ID " + label_id + " not found"},
         )
-    
+
     # Get the most common label in the project
     res = crud.get_label_counts_by_project(db, project_id)
     most_common_label = res[0][0]
 
-    # Delete the specified label and point affected boxes to the 
+    # Delete the specified label and point affected boxes to the
     # most common label instead
     crud.replace_label(db, label_id, most_common_label)
     crud.delete_label_by_id(db, label_id)
@@ -519,7 +505,7 @@ def get_project_annotations(project_id: str, db: Session = Depends(get_db)):
             status_code=404,
             content={"message": "Project with ID " + project_id + " not found"},
         )
-    
+
     # Create default save location
     # TODO: later be able to download frames and annotations from Azure
     local_save_path = os.getcwd() + "/local_projects/" + project.name
@@ -538,17 +524,22 @@ def get_project_annotations(project_id: str, db: Session = Depends(get_db)):
         os.makedirs(storage_location["path"] + "/frames")
     if not os.path.exists(storage_location["path"] + "/boxes"):
         os.makedirs(storage_location["path"] + "/boxes")
-    
+
     # Save all current labels and UUIDs in a single txt file
     project_labels = crud.get_labels_by_project(db, project_id)
-    labels_to_write = [str(label.id) + " " + label.name + "\n" for label in project_labels]
+    labels_to_write = [
+        str(label.id) + " " + label.name + "\n" for label in project_labels
+    ]
     with open(storage_location["path"] + "/labels.txt", "w") as labelsfile:
         labelsfile.writelines(labels_to_write)
-    
+
     # Save all frames from all videos as frameUUID.jpg files
     project_frames = crud.get_frames_by_project_id(db, project_id)
     for frame in project_frames:
-        shutil.copyfile(frame.frame_url, storage_location["path"] + "/frames/" + str(frame.id) + ".jpg")
+        shutil.copyfile(
+            frame.frame_url,
+            storage_location["path"] + "/frames/" + str(frame.id) + ".jpg",
+        )
 
         # Save all bounding boxes from all videos in frameUUID.txt files
         # using the YOLO format: labelUUID center_x center_y width height
@@ -559,18 +550,20 @@ def get_project_annotations(project_id: str, db: Session = Depends(get_db)):
             center_y = ((box.y_top_left + box.y_bottom_right) / 2) / frame.height
             normalized_width = box.width / frame.width
             normalized_height = box.height / frame.height
-            boxes_to_write.append(f"{str(box.label_id)} {center_x} {center_y} {normalized_width} {normalized_height}\n")
-        with open(storage_location["path"] + "/boxes/" + str(frame.id) + ".txt", "w") as boxfile:
+            boxes_to_write.append(
+                f"{str(box.label_id)} {center_x} {center_y} {normalized_width} {normalized_height}\n"
+            )
+        with open(
+            storage_location["path"] + "/boxes/" + str(frame.id) + ".txt", "w"
+        ) as boxfile:
             boxfile.writelines(boxes_to_write)
 
     # Tell the client where to find the annotations, images, and labels
     return JSONResponse(
         status_code=200,
-        content={
-            "id": project_id, 
-            "annotations-path": storage_location["path"]
-        },
+        content={"id": project_id, "annotations-path": storage_location["path"]},
     )
+
 
 @app.get("/projects/{project_id}/videos")
 def get_project_videos(project_id: str, db: Session = Depends(get_db)):
@@ -887,15 +880,6 @@ def restart_video_preprocess(
     )
 
 
-@app.delete("/videos/{video_id}")
-def delete_video(video_id: str):
-    # TODO: delete requested video and all associated
-    # artifacts (bounding boxes, images, numpy files)
-
-    # TODO: return status code from SQL delete operation
-    return 200
-
-
 @app.get("/videos/{video_id}/frames")
 def get_video_frames(video_id: str, db: Session = Depends(get_db)):
     # Validate that video_id is a valid UUID
@@ -989,33 +973,6 @@ def get_frame_inferences(frame_id: str, db: Session = Depends(get_db)):
         boxes.append(box)
 
     return {"frame_id": frame_id, "bounding_boxes": boxes}
-
-
-# format = query parameter for bounding box data format
-@app.get("/frames/{frame_id}/annotations")
-def get_frame_annotations(frame_id: str, format: str = "coco"):
-    # TODO: use project_id to retrieve all bounding box and
-    # class label information for this frame
-    # (no new object detection inference should be made)
-
-    # TODO: allow user to select what format they want to export
-    # the bounding boxes: COCO by default, but other options include
-    # yolo, pascal_voc, and albumentations
-
-    return {
-        "format": "coco",
-        "annotations": [
-            {
-                "bounding_box_id": "uuid-b1",
-                "frame_id": "uuid-f1",
-                "label": "label-name",
-                "x_min": 20,
-                "y_min": 40,
-                "width": 100,
-                "height": 200,
-            }
-        ],
-    }
 
 
 @app.put("/frames")
@@ -1154,6 +1111,7 @@ def update_boxes_without_inference(
         return 500
     return 200
 
+
 @app.delete("/boundingboxes/{box_id}")
 def delete_bounding_box(box_id: str, db: Session = Depends(get_db)):
     try:
@@ -1171,7 +1129,7 @@ def delete_bounding_box(box_id: str, db: Session = Depends(get_db)):
             status_code=404,
             content={"message": "Bounding box with ID " + box_id + " not found"},
         )
-    
+
     crud.delete_box_by_id(db, box_id)
 
     # Check that it was actually deleted
