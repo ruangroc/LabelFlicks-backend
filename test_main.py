@@ -336,6 +336,14 @@ def test_interactive_workflow():
     label_id1 = data["labels"][0]["id"]
     label_id2 = data["labels"][3]["id"]
 
+    # Add a label and fetch again to make sure it was added
+    create_label = client.post(f"/projects/{project_id}/labels", json=["cat"])
+    assert create_label.status_code == 200
+    check_label_create = client.get(f"/projects/{project_id}/labels")
+    assert check_label_create.status_code == 200
+    data = check_label_create.json()
+    assert len(data["labels"]) == 8
+
     # Fetch the bounding boxes for the first frame and simply mark
     # the frame and boxes as human-reviewed. Mimics the frontend
     # simply clicking to go to the next frame, no corrections needed.
@@ -397,6 +405,14 @@ def test_interactive_workflow():
     box_id = frame2_boxes[0]["id"]
     delete_response = client.delete(f"/boundingboxes/{box_id}")
     assert delete_response.status_code == 200
+
+    # Delete a label and fetch labels again to make sure it was deleted
+    delete_label = client.delete(f"/projects/{project_id}/labels/{label_id2}")
+    assert delete_label.status_code == 200
+    check_label_delete = client.get(f"/projects/{project_id}/labels")
+    assert check_label_delete.status_code == 200
+    data = check_label_delete.json()
+    assert len(data["labels"]) == 7
 
     # Download all annotations for this project
     download_response = client.get(f"/projects/{project_id}/annotations")
