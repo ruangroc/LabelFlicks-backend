@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Uuid, Date, text
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Uuid, Date, text, LargeBinary
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -59,14 +59,18 @@ class BoundingBox(Base):
     width = Column('width', Integer)
     height = Column('height', Integer)
     frame_id = Column('frame_id', Uuid, ForeignKey("frames.id"))
-    label_id = Column('label_id', Uuid, ForeignKey("labels.id"))
+    label_id = Column('label_id', Uuid, ForeignKey("labels.id"), nullable=True)
+    image_features = Column('image_features', LargeBinary(length=21000))
+    prediction = Column('prediction', Boolean, default=True)
+
+    label = relationship("Label", cascade="all, delete")
 
 
 class Label(Base):
     __tablename__ = "labels"
 
     id = Column('id', Uuid, primary_key=True, index=True, unique=True, server_default=text("gen_random_uuid()"))
-    name = Column('name', String, unique=True)
+    name = Column('name', String)
     project_id = Column('project_id', Uuid, ForeignKey("projects.id"))
 
     project = relationship("Project", back_populates="labels")

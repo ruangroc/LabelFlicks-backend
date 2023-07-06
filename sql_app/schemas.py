@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import List
 from uuid import UUID
 from datetime import date
 
@@ -15,17 +15,20 @@ from pydantic import BaseModel
 # Project schemas
 ###############################################################
 
+
 # Base class for attributes shared between creating and reading
 class ProjectBase(BaseModel):
     name: str
+
 
 # When creating a project, we won't know its uuid
 class ProjectCreate(ProjectBase):
     pass
 
+
 # When fetching a project, we should know everything
 class ExistingProject(ProjectBase):
-    id: UUID 
+    id: UUID
     percent_labeled: float = 0.0
     video_count: int = 0
 
@@ -38,15 +41,17 @@ class ExistingProject(ProjectBase):
 # Video schemas
 ###############################################################
 
+
 # Base class for attributes shared between creating and reading
 class VideoBase(BaseModel):
     name: str
     project_id: UUID
-    
+
 
 # When uploading a video, we won't know its id, url, or current date
 class VideoCreate(VideoBase):
     pass
+
 
 # When fetching a video, we should know everything
 class Video(VideoBase):
@@ -60,6 +65,7 @@ class Video(VideoBase):
     class Config:
         orm_mode = True
 
+
 # What we want to return to the client
 class VideoResponse(VideoBase):
     id: UUID
@@ -69,11 +75,12 @@ class VideoResponse(VideoBase):
     percent_labeled: float
     number_of_frames: int
     preprocessing_status: str
-    
+
 
 ###############################################################
 # BoundingBox schemas
 ###############################################################
+
 
 # Base class for attributes shared between creating and reading
 class BoundingBoxBase(BaseModel):
@@ -85,31 +92,37 @@ class BoundingBoxBase(BaseModel):
     height: int
     frame_id: UUID
     label_id: UUID
+    prediction: bool
+
 
 # We should know everything about a new BoundingBox
 # except for the auto-generated UUID
 class BoundingBoxCreate(BoundingBoxBase):
-    pass
+    image_features: bytes
 
-# When fetching a bounding box, we should know everything
+
 class BoundingBox(BoundingBoxBase):
     id: UUID
 
     class Config:
         orm_mode = True
 
+
 ###############################################################
 # Label schemas
 ###############################################################
+
 
 # Base class for attributes shared between creating and reading
 class LabelBase(BaseModel):
     name: str
     project_id: UUID
 
+
 # When creating a label, we won't know its uuid
 class LabelCreate(LabelBase):
     pass
+
 
 # When fetching a label, we should know everything
 class Label(LabelBase):
@@ -123,6 +136,7 @@ class Label(LabelBase):
 # Frame schemas
 ###############################################################
 
+
 # Base class for attributes shared between creating and reading
 class FrameBase(BaseModel):
     human_reviewed: bool = False
@@ -132,10 +146,12 @@ class FrameBase(BaseModel):
     video_id: UUID
     frame_url: str
 
+
 # When uploading a frame, we should know what project it belongs
 # to, what video it came from, and where it's stored
 class FrameCreate(FrameBase):
     pass
+
 
 # When fetching a frame, we should know everything
 class Frame(FrameBase):

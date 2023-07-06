@@ -20,9 +20,18 @@ import cv2
 from io import BytesIO
 import tempfile
 from ultralytics import YOLO
+import torchvision.transforms.functional as TF
+from efficientnet_pytorch import EfficientNet
+from model_training import ClassifierManager
+import pickle
+import shutil
 
 # Load pre-trained YOLO object detection model
 yolo_model = YOLO("yolov8n.pt")
+
+# Load pre-trained image feature extraction model (EfficientNet)
+feature_extraction_model = EfficientNet.from_pretrained("efficientnet-b0")
+feature_extraction_model.eval()
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -119,17 +128,22 @@ def predict_bounding_boxes(
     # Put info about each box into a standard format
     boxes = []
     for box in yolo_results[0].boxes:
-        # print("\n box.xyxy:", box.xyxy, "\n")
-        # print("\n box.xywh:", box.xywh, "\n")
-
         # Box information given as tensor([[float, float, float, float]])
-        x_top_left = box.xyxy[0][0]
-        y_top_left = box.xyxy[0][1]
-        x_bottom_right = box.xyxy[0][2]
-        y_bottom_right = box.xyxy[0][3]
-        width = box.xywh[0][2]
-        height = box.xywh[0][3]
+        x_top_left = int(box.xyxy[0][0])
+        y_top_left = int(box.xyxy[0][1])
+        x_bottom_right = int(box.xyxy[0][2])
+        y_bottom_right = int(box.xyxy[0][3])
+        width = int(box.xywh[0][2])
+        height = int(box.xywh[0][3])
         label_name = yolo_class_ids_to_names[int(box.cls)]
+
+        # Crop image to what's inside the bounding box and get the feature vector for that cropped area
+        cropped_image = TF.crop(
+            TF.to_tensor(frame_image), y_top_left, x_top_left, height, width
+        ).unsqueeze(0)
+        padded_image = TF.resize(cropped_image, (64, 64), antialias=True)
+        image_features = feature_extraction_model.extract_features(padded_image)
+        image_features = pickle.dumps(image_features.detach())
 
         db_box = schemas.BoundingBoxCreate.parse_obj(
             {
@@ -141,6 +155,8 @@ def predict_bounding_boxes(
                 "height": height,
                 "frame_id": frame_id,
                 "label_id": label_names_to_db_ids[label_name],
+                "image_features": image_features,
+                "prediction": True,
             }
         )
         boxes.append(db_box)
@@ -216,16 +232,13 @@ def preprocess_video(
                     "height": height,
                     "project_id": project_id,
                     "video_id": video_id,
-                    "frame_url": storage_location["path"]
-                    + "/"
-                    + str(index)
-                    + ".jpg",
+                    "frame_url": storage_location["path"] + "/" + str(index) + ".jpg",
                 }
             )
             inserted_frame = crud.insert_one_frame(db, new_frame)
             # if inserted_frame:
             #     predict_bounding_boxes(image, inserted_frame.id, project_id, db)
-                
+
         else:
             is_success = cv2.imwrite(
                 storage_location["path"] + "/" + str(index) + ".jpg", image
@@ -235,7 +248,7 @@ def preprocess_video(
                 # Signify that preprocessing failed for this video so caller can restart
                 crud.set_video_preprocessing_status(db, video_id, "failed")
                 return
-            
+
             new_frame = schemas.FrameCreate.parse_obj(
                 {
                     "width": width,
@@ -248,7 +261,6 @@ def preprocess_video(
             inserted_frame = crud.insert_one_frame(db, new_frame)
             # if inserted_frame:
             #     predict_bounding_boxes(image, inserted_frame.id, project_id, db)
-
 
         if inserted_frame:
             predict_bounding_boxes(image, inserted_frame.id, project_id, db)
@@ -359,25 +371,6 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
     return project
 
 
-@app.put("/projects/{project_id}")
-async def rename_project(project_id: str, project: schemas.ProjectCreate):
-    # TODO: use project_id to update name of the project,
-    # or return error for invalid id
-
-    return {
-        "project": {"id": project_id, "name": project["name"], "percent_labeled": 10}
-    }
-
-
-@app.delete("/projects/{project_id}")
-def delete_project(project_id: str):
-    # TODO: delete requested project and all associated
-    # artifacts (videos, images, numpy files, bounding boxes)
-
-    # TODO: return status code from SQL delete operation
-    return 200
-
-
 @app.get("/projects/{project_id}/labels")
 def get_project_labels(project_id: str, db: Session = Depends(get_db)):
     # Validate that project_id is a valid UUID
@@ -409,13 +402,167 @@ def get_project_labels(project_id: str, db: Session = Depends(get_db)):
     return {"project_id": project_id, "labels": labels}
 
 
-@app.get("/projects/{project_id}/labeled-images")
-def get_project_labeled_images(project_id: str):
-    # TODO: use project_id to retrieve all annotated images
-    # contains (bounding boxes and class labels) for all
-    # frames from this project
+@app.post("/projects/{project_id}/labels")
+def create_project_labels(
+    project_id: str, labels: List[str], db: Session = Depends(get_db)
+):
+    # Validate that project_id is a valid UUID
+    try:
+        uuid.UUID(project_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Project ID " + project_id + " is not a valid UUID"},
+        )
 
-    return {"id": project_id, "labeled-images": []}
+    res = crud.get_project_by_id(db, project_id)
+
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Project with ID " + project_id + " not found"},
+        )
+
+    new_labels = [
+        schemas.LabelCreate.parse_obj(
+            {"project_id": project_id, "name": str(label_name)}
+        )
+        for label_name in labels
+    ]
+    crud.insert_labels(db, new_labels)
+
+    return 200
+
+
+@app.delete("/projects/{project_id}/labels/{label_id}")
+def delete_label(project_id: str, label_id: str, db: Session = Depends(get_db)):
+    try:
+        uuid.UUID(project_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Project ID " + project_id + " is not a valid UUID"},
+        )
+
+    res = crud.get_project_by_id(db, project_id)
+
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Project with ID " + project_id + " not found"},
+        )
+
+    try:
+        uuid.UUID(label_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Label ID " + label_id + " is not a valid UUID"},
+        )
+
+    res = crud.get_label_by_id(db, label_id)
+
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Label with ID " + label_id + " not found"},
+        )
+
+    # Get the most common label in the project
+    res = crud.get_label_counts_by_project(db, project_id)
+    most_common_label = res[0][0]
+
+    # Delete the specified label and point affected boxes to the
+    # most common label instead
+    crud.replace_label(db, label_id, most_common_label)
+    crud.delete_label_by_id(db, label_id)
+
+    # Check that the specified label was actually deleted
+    res = crud.get_label_by_id(db, label_id)
+    if res != None:
+        return JSONResponse(
+            status_code=500,
+            content={"message": "Label with ID " + label_id + " was not deleted"},
+        )
+
+    return 200
+
+
+@app.get("/projects/{project_id}/annotations")
+def get_project_annotations(project_id: str, db: Session = Depends(get_db)):
+    try:
+        uuid.UUID(project_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Project ID " + project_id + " is not a valid UUID"},
+        )
+
+    project = crud.get_project_by_id(db, project_id)
+
+    if project == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Project with ID " + project_id + " not found"},
+        )
+
+    # Create default save location
+    # TODO: later be able to download frames and annotations from Azure
+    local_save_path = os.getcwd() + "/local_projects/" + project.name
+    storage_location = {
+        "azure": False,
+        "path": local_save_path + "/annotations",
+        "container": "",
+    }
+
+    # Create the project_name/annotations directory
+    if not os.path.exists(storage_location["path"]):
+        os.makedirs(storage_location["path"])
+
+    # Create the frames and boxes subdirectories
+    if not os.path.exists(storage_location["path"] + "/frames"):
+        os.makedirs(storage_location["path"] + "/frames")
+    if not os.path.exists(storage_location["path"] + "/boxes"):
+        os.makedirs(storage_location["path"] + "/boxes")
+
+    # Save all current labels and UUIDs in a single txt file
+    project_labels = crud.get_labels_by_project(db, project_id)
+    labels_to_write = [
+        str(label.id) + " " + label.name + "\n" for label in project_labels
+    ]
+    with open(storage_location["path"] + "/labels.txt", "w") as labelsfile:
+        labelsfile.writelines(labels_to_write)
+
+    # Save all frames from all videos as frameUUID.jpg files
+    project_frames = crud.get_frames_by_project_id(db, project_id)
+    for frame in project_frames:
+        shutil.copyfile(
+            frame.frame_url,
+            storage_location["path"] + "/frames/" + str(frame.id) + ".jpg",
+        )
+
+        # Save all bounding boxes from all videos in frameUUID.txt files
+        # using the YOLO format: labelUUID center_x center_y width height
+        frame_boxes = crud.get_boxes_by_frame_id(db, frame.id)
+        boxes_to_write = []
+        for box in frame_boxes:
+            center_x = ((box.x_top_left + box.x_bottom_right) / 2) / frame.width
+            center_y = ((box.y_top_left + box.y_bottom_right) / 2) / frame.height
+            normalized_width = box.width / frame.width
+            normalized_height = box.height / frame.height
+            boxes_to_write.append(
+                f"{str(box.label_id)} {center_x} {center_y} {normalized_width} {normalized_height}\n"
+            )
+        with open(
+            storage_location["path"] + "/boxes/" + str(frame.id) + ".txt", "w"
+        ) as boxfile:
+            boxfile.writelines(boxes_to_write)
+
+    # Tell the client where to find the annotations, images, and labels
+    return JSONResponse(
+        status_code=200,
+        content={"id": project_id, "annotations-path": storage_location["path"]},
+    )
 
 
 @app.get("/projects/{project_id}/videos")
@@ -733,15 +880,6 @@ def restart_video_preprocess(
     )
 
 
-@app.delete("/videos/{video_id}")
-def delete_video(video_id: str):
-    # TODO: delete requested video and all associated
-    # artifacts (bounding boxes, images, numpy files)
-
-    # TODO: return status code from SQL delete operation
-    return 200
-
-
 @app.get("/videos/{video_id}/frames")
 def get_video_frames(video_id: str, db: Session = Depends(get_db)):
     # Validate that video_id is a valid UUID
@@ -752,7 +890,7 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
             status_code=400,
             content={"message": "Video ID " + video_id + " is not a valid UUID"},
         )
-    
+
     res = crud.get_video_by_id(db, video_id)
 
     if res == None:
@@ -767,7 +905,7 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
     # Create a mapping from frame ID to list of unique labels detected in
     # that frame that the next for loop can reference
     labels_per_frame_dict = {}
-    for (frame_id, labels) in labels_per_frame:
+    for frame_id, labels in labels_per_frame:
         labels_per_frame_dict[frame_id] = [] if labels == [None] else labels
 
     frames = []
@@ -782,7 +920,7 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
                 "project_id": frame.project_id,
                 "video_id": frame.video_id,
                 "frame_url": frame.frame_url,
-                "labels": labels_per_frame_dict[frame.id]
+                "labels": labels_per_frame_dict[frame.id],
             }
         )
         frames.append(parsed_frame)
@@ -794,6 +932,7 @@ def get_video_frames(video_id: str, db: Session = Depends(get_db)):
 # Frames endpoints
 ###############################################################
 
+
 # Get the bounding boxes for this frame
 @app.get("/frames/{frame_id}/inferences")
 def get_frame_inferences(frame_id: str, db: Session = Depends(get_db)):
@@ -804,7 +943,7 @@ def get_frame_inferences(frame_id: str, db: Session = Depends(get_db)):
             status_code=400,
             content={"message": "Frame ID " + frame_id + " is not a valid UUID"},
         )
-    
+
     res = crud.get_frame_by_id(db, frame_id)
 
     if res == None:
@@ -812,12 +951,12 @@ def get_frame_inferences(frame_id: str, db: Session = Depends(get_db)):
             status_code=404,
             content={"message": "Frame with ID " + frame_id + " not found"},
         )
-    
+
     rows_returned = crud.get_boxes_by_frame_id(db, frame_id)
 
     boxes = []
     for row in rows_returned:
-        box = schemas.BoundingBoxCreate.parse_obj(
+        box = schemas.BoundingBox.parse_obj(
             {
                 "x_top_left": row.x_top_left,
                 "y_top_left": row.y_top_left,
@@ -827,6 +966,8 @@ def get_frame_inferences(frame_id: str, db: Session = Depends(get_db)):
                 "height": row.height,
                 "frame_id": frame_id,
                 "label_id": row.label_id,
+                "id": row.id,
+                "prediction": row.prediction,
             }
         )
         boxes.append(box)
@@ -834,28 +975,169 @@ def get_frame_inferences(frame_id: str, db: Session = Depends(get_db)):
     return {"frame_id": frame_id, "bounding_boxes": boxes}
 
 
-# format = query parameter for bounding box data format
-@app.get("/frames/{frame_id}/annotations")
-def get_frame_annotations(frame_id: str, format: str = "coco"):
-    # TODO: use project_id to retrieve all bounding box and
-    # class label information for this frame
-    # (no new object detection inference should be made)
+@app.put("/frames")
+async def update_frames(
+    updated_frames: List[schemas.Frame],
+    db: Session = Depends(get_db),
+):
+    # Save the updated frames information
+    result = crud.update_frames(db, updated_frames)
+    if dict(result) != {}:
+        return 500
+    return 200
 
-    # TODO: allow user to select what format they want to export
-    # the bounding boxes: COCO by default, but other options include
-    # yolo, pascal_voc, and albumentations
 
-    return {
-        "format": "coco",
-        "annotations": [
-            {
-                "bounding_box_id": "uuid-b1",
-                "frame_id": "uuid-f1",
-                "label": "label-name",
-                "x_min": 20,
-                "y_min": 40,
-                "width": 100,
-                "height": 200,
-            }
-        ],
-    }
+###############################################################
+# Bounding Boxes endpoints
+###############################################################
+
+
+@app.post("/boundingboxes")
+async def update_bounding_boxes(
+    project_id: str,
+    video_id: str,
+    updated_boxes: List[schemas.BoundingBox],
+    db: Session = Depends(get_db),
+):
+    # Validate that project_id is a valid UUID
+    try:
+        uuid.UUID(project_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Project ID " + project_id + " is not a valid UUID"},
+        )
+
+    res = crud.get_project_by_id(db, project_id)
+
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Project with ID " + project_id + " not found"},
+        )
+
+    # Validate that video_id is a valid UUID
+    try:
+        uuid.UUID(video_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Video ID " + video_id + " is not a valid UUID"},
+        )
+
+    res = crud.get_video_by_id(db, video_id)
+
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Video with ID " + video_id + " not found"},
+        )
+
+    # Save the updated bounding box information
+    result = crud.update_boxes(db, updated_boxes)
+    if dict(result) != {}:
+        return 500
+
+    # Find out the specific labels used within this project
+    project_labels = crud.get_labels_by_project(db, project_id)
+    label2id = {label.name: label.id for label in project_labels}
+    unique_labels = list(label2id.keys())
+
+    # Fetch image_features and label names for each box for each
+    # frame in a video (the one specified in updated_boxes)
+    all_boxes = crud.get_box_vectors_and_labels_by_video_id(db, video_id)
+    box_vectors = []
+    box_labels = []
+    unreviewed_boxes = []
+    for row in all_boxes:
+        box = row[0]
+        # Will train on reviewed boxes and predict labels for unreviewed boxes
+        if box.prediction == True:
+            unreviewed_boxes.append(box)
+        else:
+            box_vectors.append(box.image_features)
+            box_labels.append(row.name)
+
+    # If there's nothing to train on, just return
+    if len(box_vectors) < 1:
+        return 200
+
+    # Instantiate a new classification model (small, feed forward network)
+    model = ClassifierManager(box_vectors, box_labels, unique_labels)
+
+    # Train the model using all of the bounding box information
+    model.fit()
+
+    if len(unreviewed_boxes) > 0:
+        # Get new label predictions for each box
+        unreviewed_boxes_vectors = [box.image_features for box in unreviewed_boxes]
+        new_predictions = model.predict(unreviewed_boxes_vectors)
+
+        # Attach the new label predictions to each box
+        new_predicted_boxes = []
+        for updated_label, box in zip(new_predictions, unreviewed_boxes):
+            new_box = schemas.BoundingBox.parse_obj(
+                {
+                    "x_top_left": box.x_top_left,
+                    "y_top_left": box.y_top_left,
+                    "x_bottom_right": box.x_bottom_right,
+                    "y_bottom_right": box.y_bottom_right,
+                    "width": box.width,
+                    "height": box.height,
+                    "frame_id": box.frame_id,
+                    "label_id": label2id[updated_label],
+                    "id": box.id,
+                    "prediction": True,
+                }
+            )
+            new_predicted_boxes.append(new_box)
+
+        # Save updated label predictions in the database
+        result = crud.update_boxes(db, new_predicted_boxes)
+        if dict(result) != {}:
+            return 500
+
+    # Let the client know everything went well and to proceed
+    return 200
+
+
+@app.put("/boundingboxes")
+def update_boxes_without_inference(
+    updated_boxes: List[schemas.BoundingBox], db: Session = Depends(get_db)
+):
+    # Save the updated bounding box information
+    result = crud.update_boxes(db, updated_boxes)
+    if dict(result) != {}:
+        return 500
+    return 200
+
+
+@app.delete("/boundingboxes/{box_id}")
+def delete_bounding_box(box_id: str, db: Session = Depends(get_db)):
+    try:
+        uuid.UUID(box_id)
+    except:
+        return JSONResponse(
+            status_code=400,
+            content={"message": "Bounding Box ID " + box_id + " is not a valid UUID"},
+        )
+
+    res = crud.get_box_by_id(db, box_id)
+
+    if res == None:
+        return JSONResponse(
+            status_code=404,
+            content={"message": "Bounding box with ID " + box_id + " not found"},
+        )
+
+    crud.delete_box_by_id(db, box_id)
+
+    # Check that it was actually deleted
+    res = crud.get_box_by_id(db, box_id)
+    if res != None:
+        return JSONResponse(
+            status_code=500,
+            content={"message": "Bounding box with ID " + box_id + " was not deleted"},
+        )
+
+    return 200

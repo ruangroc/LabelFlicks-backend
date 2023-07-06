@@ -1,6 +1,6 @@
 from typing import List
 from sqlalchemy.orm import Session, aliased
-from sqlalchemy import Uuid, String, update, func
+from sqlalchemy import Uuid, String, update, func, delete
 
 from . import models, schemas
 
@@ -132,6 +132,14 @@ def get_frame_by_id(db: Session, frame_id: Uuid):
     return db.query(models.Frame).filter(models.Frame.id == frame_id).first()
 
 
+def update_frames(db: Session, updated_frames: List[schemas.Frame]):
+    result = db.execute(
+        update(models.Frame), [frame.dict() for frame in updated_frames]
+    )
+    db.commit()
+    return result
+
+
 ###############################################################
 # bounding_boxes table
 ###############################################################
@@ -148,6 +156,8 @@ def insert_boxes(db: Session, boxes: List[schemas.BoundingBoxCreate]):
             height=box.height,
             frame_id=box.frame_id,
             label_id=box.label_id,
+            image_features=box.image_features,
+            prediction=box.prediction,
         )
         for box in boxes
     ]
@@ -161,6 +171,38 @@ def get_boxes_by_frame_id(db: Session, frame_id: Uuid):
         .filter(models.BoundingBox.frame_id == frame_id)
         .all()
     )
+
+
+def update_boxes(db: Session, updated_boxes: List[schemas.BoundingBox]):
+    result = db.execute(
+        update(models.BoundingBox), [box.dict() for box in updated_boxes]
+    )
+    db.commit()
+    return result
+
+
+def get_box_vectors_and_labels_by_video_id(db: Session, video_id: Uuid):
+    b = aliased(models.BoundingBox)
+    f = aliased(models.Frame)
+    l = aliased(models.Label)
+
+    # Find all bounding boxes from every frame that exists in this video
+    subquery = db.query(f.id).filter(f.video_id == video_id).subquery()
+    query = (
+        db.query(b, subquery.c.id, l.name)
+        .join(b, b.frame_id == subquery.c.id)
+        .join(l, l.id == b.label_id, isouter=True)
+    )
+    return query.all()
+
+
+def get_box_by_id(db: Session, box_id: Uuid):
+    return db.query(models.BoundingBox).filter(models.BoundingBox.id == box_id).first()
+
+
+def delete_box_by_id(db: Session, box_id: Uuid):
+    db.execute(delete(models.BoundingBox).where(models.BoundingBox.id == box_id))
+    db.commit()
 
 
 ###############################################################
@@ -188,6 +230,17 @@ def get_labels_by_project(db: Session, project_id: Uuid):
     return db.query(models.Label).filter(models.Label.project_id == project_id).all()
 
 
+def get_label_counts_by_project(db: Session, project_id: Uuid):
+    return (
+        db.query(models.Label.id, models.Label.name, func.count(models.BoundingBox.id))
+        .join(models.BoundingBox, models.BoundingBox.label_id == models.Label.id)
+        .filter(models.Label.project_id == project_id)
+        .group_by(models.Label)
+        .order_by(func.count(models.BoundingBox.id).desc())
+        .all()
+    )
+
+
 def get_unique_labels_per_frame(db: Session, video_id: Uuid):
     # Define aliases for the tables
     b = aliased(models.BoundingBox)
@@ -204,3 +257,21 @@ def get_unique_labels_per_frame(db: Session, video_id: Uuid):
         .group_by(subquery.c.id)
     )
     return query.all()
+
+
+def get_label_by_id(db: Session, label_id: Uuid):
+    return db.query(models.Label).filter(models.Label.id == label_id).first()
+
+
+def replace_label(db: Session, label_id: Uuid, replace_id: Uuid):
+    db.execute(
+        update(models.BoundingBox)
+        .where(models.BoundingBox.label_id == label_id)
+        .values(label_id=replace_id)
+    )
+    db.commit()
+
+
+def delete_label_by_id(db: Session, label_id: Uuid):
+    db.execute(delete(models.Label).where(models.Label.id == label_id))
+    db.commit()
