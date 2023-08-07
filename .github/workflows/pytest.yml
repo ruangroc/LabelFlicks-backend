@@ -57,15 +57,12 @@ jobs:
       - name: Connect to PostgreSQL and run the tests
         # Runs a script that creates a PostgreSQL table, populates
         # the table with data, and then retrieves the data.
-        run: pytest --verbose --cov=sql_app ./test_main.py
+        run: pytest --verbose --cov=sql_app ./test_main.py | tee ./pytest-coverage.txt
         env:
           TEST_ENVIRONMENT: "TRUE"
           POSTGRES_TEST_DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
-      
-      - name: Generate code coverage report
-        run: coverage report
 
       - name: Pytest coverage comment
         uses: MishaKav/pytest-coverage-comment@main
         with:
-          pytest-coverage-path: ./coverage.xml
+          pytest-coverage-path: ./pytest-coverage.txt
