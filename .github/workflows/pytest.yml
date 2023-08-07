@@ -29,13 +29,10 @@ jobs:
           - 5432:5432
     
     permissions:
-      # Gives the action the necessary permissions for publishing new
-      # comments in pull requests.
+      # Required to checkout the code
+      contents: read
+      # Required to put a comment into the pull-request
       pull-requests: write
-      # Gives the action the necessary permissions for pushing data to the
-      # python-coverage-comment-action branch, and for editing existing
-      # comments (to avoid publishing multiple comments in the same PR)
-      contents: write
 
     steps:
       - uses: actions/checkout@v3
