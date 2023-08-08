@@ -1,6 +1,7 @@
 name: Python package
 
-on: [push]
+on:
+  pull_request:
 
 jobs:
   build:
@@ -27,6 +28,12 @@ jobs:
         ports:
           # Maps tcp port 5432 on service container to the host
           - 5432:5432
+    
+    permissions:
+      # Required to checkout the code
+      contents: read
+      # Required to put a comment into the pull-request
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v3
@@ -37,7 +44,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flake8 pytest
+          pip install flake8 pytest pytest-cov
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: Lint with flake8
         run: |
@@ -48,7 +55,12 @@ jobs:
       - name: Connect to PostgreSQL and run the tests
         # Runs a script that creates a PostgreSQL table, populates
         # the table with data, and then retrieves the data.
-        run: pytest --verbose
+        run: pytest --verbose --cov=sql_app ./test_main.py | tee ./pytest-coverage.txt
         env:
           TEST_ENVIRONMENT: "TRUE"
           POSTGRES_TEST_DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
+
+      - name: Pytest coverage comment
+        uses: MishaKav/pytest-coverage-comment@main
+        with:
+          pytest-coverage-path: ./pytest-coverage.txt
