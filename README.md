@@ -74,7 +74,7 @@ If you do not want the auto-reloading capability, which restarts the server upon
 
 Note: the LabelFlicks frontend client uses localhost:8000 by default so we're running the server on port 5000 to avoid clashes. If you decide to change the frontend default port instead, you can exclude the `--port=5000` parameter here.
 
-### Step 4: See the endpoints in action
+### Step 5: See the endpoints in action
 
 If you simply want to learn more about the server, simply navigate to `localhost:5000/docs` in your web browser of choice. There will be Swagger docs for each FastAPI endpoint and each one comes with a `Try it out` feature that lets you test the endpoints.
 
