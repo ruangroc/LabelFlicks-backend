@@ -1,6 +1,6 @@
 # LabelFlicks Server
 
-The LabelFlicks Server is the backend component for the overall LabelFlicks project, which aims to improve the process of converting videos into fully-labeled object detection datasets for training computer vision models.
+The LabelFlicks Server is the backend component for the overall LabelFlicks project, which aims to automate the process of converting videos into fully-labeled object detection datasets for training computer vision models.
 
 The LabelFlicks backend server accepts MP4 videos, breaks them down into per-second frames (JPG images), applies the Ultralytics YOLOv8 object detection model to generate bounding boxes and initial predictions, and trains a small neural network on human-reviewed bounding boxes and labels to re-predict the labels of unreviewed bounding boxes when the client requests it. 
 
