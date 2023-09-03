@@ -6,7 +6,7 @@ The LabelFlicks backend server accepts MP4 videos, breaks them down into per-sec
 
 The main assumption here is that modern, pre-trained object detection models are good enough that they will automatically detect most objects in an image and that only the labels would need to change to match what a user wants to label for. This is why the label prediction model spun up by the server upon request can be a smaller, fully-connected network that can be trained and used quickly within a human-in-the-loop workflow.
 
-The LabelFlicks server was built using FastAPI and a Docker instance of a PostgreSQL database. The intended frontend client can be found in the [video-labeling-electron](https://github.com/ruangroc/video-labeling-electron) repo.
+The LabelFlicks server was built using FastAPI and a Docker instance of a PostgreSQL database. The intended frontend client can be found in the [LabelFlicks-desktop](https://github.com/ruangroc/LabelFlicks-desktop) repo.
 
 ## Getting Started
 
